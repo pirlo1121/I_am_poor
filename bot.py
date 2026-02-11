@@ -35,7 +35,10 @@ from database import (
     add_recurring_expense,
     get_recurring_expenses,
     get_pending_payments,
-    mark_payment_done
+    mark_payment_done,
+    find_recurring_by_name,
+    get_expenses_by_month,
+    compare_monthly_expenses
 )
 
 # Configurar logging
@@ -76,46 +79,70 @@ SYSTEM_INSTRUCTION = """
 Eres un contador personal estricto y profesional llamado "Asistente Financiero".
 
 Tu trabajo es ayudar al usuario a:
-1. Registrar gastos normales cuando mencione que ha gastado dinero
-2. Consultar gastos por diferentes períodos (día, semana, categoría)
-3. Analizar gastos por categorías (cuáles son mayores/menores)
+1. Registrar gastos normales con DETECCIÓN INTELIGENTE de tiendas
+2. Consultar gastos por diferentes períodos (día, semana, mes, categoría)
+3. Analizar y comparar gastos entre meses
 4. Gestionar gastos fijos mensuales (facturas recurrentes)
-5. Ver facturas pendientes y marcar pagos como realizados
+5. Marcar facturas como pagadas con LENGUAJE NATURAL
 
 CAPACIDADES PRINCIPALES:
 
-📝 REGISTRAR GASTOS:
-- Cuando diga "gasté X en Y" → usar add_expense
+📝 REGISTRAR GASTOS CON SMART DETECTION:
+
+**Gastos Normales:**
+- "Gasté 20k en café" → add_expense(20000, "café", "comida")
 - Formatos: "20k", "20mil", "20000" = 20,000 COP
 
-📊 CONSULTAR GASTOS:
-- "Cuánto gasté hoy?" → get_expenses_by_day
-- "Gastos de esta semana" → get_expenses_by_week  
-- "Cuánto he gastado en comida?" → get_expenses_by_category
-- "Ver últimos gastos" → get_recent_expenses
+**🛒 DETECCIÓN AUTOMÁTICA DE MERCADO:**
+- "322 mil D1" → add_expense(322000, "D1", "mercado")
+- "25 mil ara" → add_expense(25000, "ara", "mercado")
+- "50k éxito" → add_expense(50000, "éxito", "mercado")
+- Tiendas reconocidas: D1, ARA, Éxito, Olímpica, Carulla, Jumbo
+- SIEMPRE categorizar compras de estas tiendas como "mercado"
 
-📈 ANÁLISIS:
-- "En qué gasto más?" → get_category_summary
-- "Qué categoría tiene más gastos?" → get_category_summary
+📊 CONSULTAR GASTOS:
+- "Cuánto gasté hoy?" → get_expenses_by_day(fecha_hoy)
+- "Gastos de esta semana" → get_expenses_by_week()
+- "Gastos de este mes" → get_expenses_by_month() [MES ACTUAL por defecto]
+- "Gastos de enero" → get_expenses_by_month(1, 2026)
+- "Cuánto he gastado en comida?" → get_expenses_by_category("comida")
+- "Ver últimos gastos" → get_recent_expenses()
+
+📈 ANÁLISIS Y COMPARACIONES:
+- "En qué gasto más?" → get_category_summary()
+- "Compara enero con febrero" → compare_monthly_expenses(1, 2026, 2, 2026)
+- "Gastos de enero vs diciembre" → compare_monthly_expenses(12, 2025, 1, 2026)
 
 💰 GASTOS FIJOS (FACTURAS RECURRENTES):
-- "Registra internet de 60k el día 18" → add_recurring_expense
-- "Qué facturas tengo?" → get_pending_payments
-- "Ver gastos fijos" → get_recurring_expenses
-- "Pagué la luz" o "Marcar como pagado" → mark_bill_paid
 
-REGLAS:
-- Categorías válidas: comida, transporte, entretenimiento, servicios, salud, general
+**Registrar:**
+- "Registra internet de 60k el día 18" → add_recurring_expense("internet", 60000, "servicios", 18)
+- "Luz de 45 mil el día 15" → add_recurring_expense("luz", 45000, "servicios", 15)
+
+**Consultar:**
+- "Qué facturas tengo?" → get_pending_payments()
+- "Ver gastos fijos" → get_recurring_expenses()
+
+**✅ MARCAR COMO PAGADO (LENGUAJE NATURAL):**
+- "arriendo pagado" → Buscar gasto fijo "arriendo" y marcar como pagado
+- "Pagué la luz" → Buscar gasto fijo "luz" y marcar como pagado
+- "Internet pagado" → Buscar gasto fijo "internet" y marcar como pagado
+- Proceso: Usa find_recurring_by_name() para encontrar el ID, luego mark_bill_paid()
+
+REGLAS IMPORTANTES:
+- Categorías válidas: comida, transporte, entretenimiento, servicios, salud, mercado, general
+- **mercado** es SOLO para tiendas (D1, ARA, Éxito, etc.)
+- **comida** es para restaurantes, cafés, snacks individuales
 - Para gastos fijos, el día debe estar entre 1 y 31
+- Todas las consultas muestran solo el mes actual por defecto
 - Sé conciso, profesional y amigable
-- Si no estás seguro de la categoría, usa "general"
 
 Ejemplos:
-Usuario: "Gasté 20k en uvas" → add_expense(20000, "uvas", "comida")
-Usuario: "Cuánto gasté hoy?" → get_expenses_by_day()
-Usuario: "Registra luz de 45 mil el día 15" → add_recurring_expense("luz", 45000, "servicios", 15)
-Usuario: "Qué facturas me faltan?" → get_pending_payments()
-Usuario: "En qué gasto más?" → get_category_summary()
+Usuario: "322 mil D1" → add_expense(322000, "D1", "mercado")
+Usuario: "Gasté 5k en café" → add_expense(5000, "café", "comida")
+Usuario: "arriendo pagado" → find_recurring_by_name("arriendo") → mark_bill_paid(id_encontrado)
+Usuario: "Gastos de enero" → get_expenses_by_month(1, 2026)
+Usuario: "Compara enero con diciembre" → compare_monthly_expenses(12, 2025, 1, 2026)
 """
 
 # Definir las herramientas (Tools) para Gemini Function Calling - NUEVA SINTAXIS
@@ -139,7 +166,7 @@ all_tools = types.Tool(
                     "category": types.Schema(
                         type=types.Type.STRING,
                         description="Categoría del gasto",
-                        enum=["comida", "transporte", "entretenimiento", "servicios", "salud", "general"]
+                        enum=["comida", "transporte", "entretenimiento", "servicios", "salud", "mercado", "general"]
                     )
                 },
                 required=["amount", "description", "category"]
@@ -258,6 +285,57 @@ all_tools = types.Tool(
             )
         ),
         
+        # === NUEVAS HERRAMIENTAS - MEJORAS ===
+        
+        types.FunctionDeclaration(
+            name="get_expenses_by_month",
+            description="Obtiene todos los gastos de un mes específico. Si no se especifica, muestra el mes actual.",
+            parameters=types.Schema(
+                type=types.Type.OBJECT,
+                properties={
+                    "month": types.Schema(
+                        type=types.Type.INTEGER,
+                        description="Mes (1-12). Si es None, usa mes actual"
+                    ),
+                    "year": types.Schema(
+                        type=types.Type.INTEGER,
+                        description="Año (ej: 2026). Si es None, usa año actual"
+                    )
+                },
+                required=[]
+            )
+        ),
+        
+        types.FunctionDeclaration(
+            name="compare_monthly_expenses",
+            description="Compara gastos entre dos meses. Muestra diferencias y análisis por categorías.",
+            parameters=types.Schema(
+                type=types.Type.OBJECT,
+                properties={
+                    "month1": types.Schema(type=types.Type.INTEGER, description="Primer mes (1-12)"),
+                    "year1": types.Schema(type=types.Type.INTEGER, description="Primer año"),
+                    "month2": types.Schema(type=types.Type.INTEGER, description="Segundo mes (1-12)"),
+                    "year2": types.Schema(type=types.Type.INTEGER, description="Segundo año")
+                },
+                required=["month1", "year1", "month2", "year2"]
+            )
+        ),
+        
+        types.FunctionDeclaration(
+            name="find_recurring_by_name",
+            description="Busca un gasto fijo por nombre (case-insensitive). Retorna el ID para usar con mark_bill_paid. Usa cuando digan 'X pagado' o 'pagué X'.",
+            parameters=types.Schema(
+                type=types.Type.OBJECT,
+                properties={
+                    "description": types.Schema(
+                        type=types.Type.STRING,
+                        description="Nombre del gasto fijo a buscar (ej: 'arriendo', 'luz', 'internet')"
+                    )
+                },
+                required=["description"]
+            )
+        ),
+        
         types.FunctionDeclaration(
             name="mark_bill_paid",
             description="Marca una factura/gasto fijo como pagado este mes. Usa cuando digan 'pagué X' refiriéndose a un gasto fijo.",
@@ -266,7 +344,7 @@ all_tools = types.Tool(
                 properties={
                     "recurring_expense_id": types.Schema(
                         type=types.Type.INTEGER,
-                        description="ID del gasto fijo a marcar como pagado (obtener de get_pending_payments)"
+                        description="ID del gasto fijo a marcar como pagado (obtener de find_recurring_by_name o get_pending_payments)"
                     )
                 },
                 required=["recurring_expense_id"]
@@ -604,6 +682,35 @@ async def _execute_function(function_name: str, function_args: dict, update: Upd
         recurring_id = function_args.get("recurring_expense_id")
         result = mark_payment_done(recurring_id)
         await update.message.reply_text(result["message"])
+    
+    # === NUEVAS FUNCIONES - MEJORAS ===
+    elif function_name == "get_expenses_by_month":
+        month = function_args.get("month")
+        year = function_args.get("year")
+        result = get_expenses_by_month(month, year)
+        await update.message.reply_text(result, parse_mode='Markdown')
+    
+    elif function_name == "compare_monthly_expenses":
+        month1 = function_args.get("month1")
+        year1 = function_args.get("year1")
+        month2 = function_args.get("month2")
+        year2 = function_args.get("year2")
+        result = compare_monthly_expenses(month1, year1, month2, year2)
+        await update.message.reply_text(result, parse_mode='Markdown')
+    
+    elif function_name == "find_recurring_by_name":
+        description = function_args.get("description")
+        recurring_id = find_recurring_by_name(description)
+        
+        if recurring_id:
+            # Automáticamente marcar como pagado
+            result = mark_payment_done(recurring_id)
+            await update.message.reply_text(result["message"])
+        else:
+            await update.message.reply_text(
+                f"❌ No encontré ningún gasto fijo con el nombre '{description}'.\n"
+                f"Usa /fijos o 'ver gastos fijos' para ver la lista completa."
+            )
         
     else:
         logger.warning(f"⚠️ Función desconocida: {function_name}")
