@@ -4,9 +4,11 @@ python-telegram-bot
 # Google Generative AI (Gemini) - NUEVA LIBRERÍA OFICIAL
 google-genai
 
+# OpenAI API (ChatGPT) - PROVIDER ALTERNATIVO
+openai
+
 # Supabase Client
 supabase
 
 # Environment Variables
 python-dotenv
-

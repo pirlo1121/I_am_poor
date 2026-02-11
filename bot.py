@@ -19,12 +19,24 @@ from telegram.ext import (
     ContextTypes
 )
 
-# Google Generative AI (Gemini) - NUEVA LIBRERÍA
+# AI Providers
+import openai
 from google import genai
 from google.genai import types
 
 # Database functions
-from database import add_expense, get_recent_expenses
+from database import (
+    add_expense, 
+    get_recent_expenses,
+    get_expenses_by_day,
+    get_expenses_by_week,
+    get_expenses_by_category,
+    get_category_summary,
+    add_recurring_expense,
+    get_recurring_expenses,
+    get_pending_payments,
+    mark_payment_done
+)
 
 # Configurar logging
 logging.basicConfig(
@@ -38,59 +50,91 @@ load_dotenv()
 
 # Configuración
 TELEGRAM_TOKEN: Final = os.getenv("TELEGRAM_BOT_TOKEN", "")
+CHATGPT_API_KEY: Final = os.getenv("CHATGPT_API_KEY", "")
 GEMINI_API_KEY: Final = os.getenv("GEMINI_API_KEY", "")
 
-# Validar credenciales
-if not TELEGRAM_TOKEN or not GEMINI_API_KEY:
-    raise ValueError("❌ TELEGRAM_BOT_TOKEN y GEMINI_API_KEY deben estar configurados en .env")
+# Validar Telegram token
+if not TELEGRAM_TOKEN:
+    raise ValueError("❌ TELEGRAM_BOT_TOKEN debe estar configurado en .env")
 
-# Configurar cliente de Gemini AI
-client = genai.Client(api_key=GEMINI_API_KEY)
+# Determinar qué AI provider usar
+USE_CHATGPT = bool(CHATGPT_API_KEY and CHATGPT_API_KEY.strip())
+
+if USE_CHATGPT:
+    logger.info("🤖 Usando ChatGPT como AI provider")
+    openai.api_key = CHATGPT_API_KEY
+    AI_PROVIDER = "chatgpt"
+else:
+    if not GEMINI_API_KEY:
+        raise ValueError("❌ Debes configurar GEMINI_API_KEY o CHATGPT_API_KEY en .env")
+    logger.info("🤖 Usando Gemini como AI provider")
+    gemini_client = genai.Client(api_key=GEMINI_API_KEY)
+    AI_PROVIDER = "gemini"
 
 # System Instruction para Gemini (comportamiento del asistente)
 SYSTEM_INSTRUCTION = """
 Eres un contador personal estricto y profesional llamado "Asistente Financiero".
 
 Tu trabajo es ayudar al usuario a:
-1. Registrar gastos cuando mencione que ha gastado dinero
-2. Consultar sus gastos recientes cuando lo solicite
-3. Responder preguntas relacionadas con finanzas personales
+1. Registrar gastos normales cuando mencione que ha gastado dinero
+2. Consultar gastos por diferentes períodos (día, semana, categoría)
+3. Analizar gastos por categorías (cuáles son mayores/menores)
+4. Gestionar gastos fijos mensuales (facturas recurrentes)
+5. Ver facturas pendientes y marcar pagos como realizados
 
-REGLAS IMPORTANTES:
-- Cuando el usuario diga que gastó dinero (ej: "gasté 20k en uvas"), DEBES llamar a la función add_expense
-- Los montos pueden estar en formato: "20k", "20mil", "20000", "20.000" - todos significan 20,000 COP
-- Si el usuario pregunta por sus gastos o quiere ver un resumen, llama a get_recent_expenses
+CAPACIDADES PRINCIPALES:
+
+📝 REGISTRAR GASTOS:
+- Cuando diga "gasté X en Y" → usar add_expense
+- Formatos: "20k", "20mil", "20000" = 20,000 COP
+
+📊 CONSULTAR GASTOS:
+- "Cuánto gasté hoy?" → get_expenses_by_day
+- "Gastos de esta semana" → get_expenses_by_week  
+- "Cuánto he gastado en comida?" → get_expenses_by_category
+- "Ver últimos gastos" → get_recent_expenses
+
+📈 ANÁLISIS:
+- "En qué gasto más?" → get_category_summary
+- "Qué categoría tiene más gastos?" → get_category_summary
+
+💰 GASTOS FIJOS (FACTURAS RECURRENTES):
+- "Registra internet de 60k el día 18" → add_recurring_expense
+- "Qué facturas tengo?" → get_pending_payments
+- "Ver gastos fijos" → get_recurring_expenses
+- "Pagué la luz" o "Marcar como pagado" → mark_bill_paid
+
+REGLAS:
+- Categorías válidas: comida, transporte, entretenimiento, servicios, salud, general
+- Para gastos fijos, el día debe estar entre 1 y 31
 - Sé conciso, profesional y amigable
 - Si no estás seguro de la categoría, usa "general"
-- Las categorías comunes son: comida, transporte, entretenimiento, servicios, salud, general
 
-Ejemplos de conversación:
-Usuario: "Gasté 20k en uvas"
-→ Llamas add_expense(20000, "uvas", "comida")
-
-Usuario: "Pagué 50 mil de Uber"
-→ Llamas add_expense(50000, "Uber", "transporte")
-
-Usuario: "Muéstrame mis gastos"
-→ Llamas get_recent_expenses()
+Ejemplos:
+Usuario: "Gasté 20k en uvas" → add_expense(20000, "uvas", "comida")
+Usuario: "Cuánto gasté hoy?" → get_expenses_by_day()
+Usuario: "Registra luz de 45 mil el día 15" → add_recurring_expense("luz", 45000, "servicios", 15)
+Usuario: "Qué facturas me faltan?" → get_pending_payments()
+Usuario: "En qué gasto más?" → get_category_summary()
 """
 
 # Definir las herramientas (Tools) para Gemini Function Calling - NUEVA SINTAXIS
-add_expense_tool = types.Tool(
+all_tools = types.Tool(
     function_declarations=[
+        # === GASTOS NORMALES ===
         types.FunctionDeclaration(
             name="add_expense",
-            description="Registra un nuevo gasto en la base de datos. Usa esta función cuando el usuario mencione que ha gastado dinero.",
+            description="Registra un nuevo gasto en la base de datos. Usa cuando el usuario mencione que gastó dinero.",
             parameters=types.Schema(
                 type=types.Type.OBJECT,
                 properties={
                     "amount": types.Schema(
                         type=types.Type.NUMBER,
-                        description="Monto del gasto en pesos colombianos (COP). Convierte 'k' o 'mil' a números completos. Ejemplo: 20k = 20000"
+                        description="Monto en COP. Convierte 'k' o 'mil' a números: 20k = 20000"
                     ),
                     "description": types.Schema(
                         type=types.Type.STRING,
-                        description="Descripción breve del gasto (ej: 'uvas', 'taxi', 'almuerzo')"
+                        description="Descripción breve del gasto"
                     ),
                     "category": types.Schema(
                         type=types.Type.STRING,
@@ -101,19 +145,238 @@ add_expense_tool = types.Tool(
                 required=["amount", "description", "category"]
             )
         ),
+        
         types.FunctionDeclaration(
             name="get_recent_expenses",
-            description="Obtiene los últimos 5 gastos registrados. Usa esta función cuando el usuario quiera ver sus gastos recientes o un resumen.",
+            description="Obtiene los últimos 5 gastos registrados.",
             parameters=types.Schema(
                 type=types.Type.OBJECT,
                 properties={},
                 required=[]
+            )
+        ),
+        
+        # === CONSULTAS POR PERÍODO ===
+        types.FunctionDeclaration(
+            name="get_expenses_by_day",
+            description="Obtiene gastos de un día específico. Usa cuando pregunten 'cuánto gasté hoy' o por una fecha específica.",
+            parameters=types.Schema(
+                type=types.Type.OBJECT,
+                properties={
+                    "date": types.Schema(
+                        type=types.Type.STRING,
+                        description="Fecha en formato YYYY-MM-DD. Si no se proporciona, usa el día actual"
+                    )
+                },
+                required=[]
+            )
+        ),
+        
+        types.FunctionDeclaration(
+            name="get_expenses_by_week",
+            description="Obtiene gastos de los últimos 7 días. Usa cuando pregunten por gastos de la semana.",
+            parameters=types.Schema(
+                type=types.Type.OBJECT,
+                properties={},
+                required=[]
+            )
+        ),
+        
+        types.FunctionDeclaration(
+            name="get_expenses_by_category",
+            description="Obtiene todos los gastos de una categoría específica.",
+            parameters=types.Schema(
+                type=types.Type.OBJECT,
+                properties={
+                    "category": types.Schema(
+                        type=types.Type.STRING,
+                        description="Categoría a consultar",
+                        enum=["comida", "transporte", "entretenimiento", "servicios", "salud", "general"]
+                    )
+                },
+                required=["category"]
+            )
+        ),
+        
+        # === ANÁLISIS ===
+        types.FunctionDeclaration(
+            name="get_category_summary",
+            description="Analiza gastos por categoría ordenados de mayor a menor. Usa cuando pregunten en qué gastan más o análisis de categorías.",
+            parameters=types.Schema(
+                type=types.Type.OBJECT,
+                properties={},
+                required=[]
+            )
+        ),
+        
+        # === GASTOS FIJOS / FACTURAS RECURRENTES ===
+        types.FunctionDeclaration(
+            name="add_recurring_expense",
+            description="Registra un gasto fijo mensual (factura recurrente). Usa cuando digan 'registra X cada mes el día Y'.",
+            parameters=types.Schema(
+                type=types.Type.OBJECT,
+                properties={
+                    "description": types.Schema(
+                        type=types.Type.STRING,
+                        description="Descripción del gasto fijo (ej: 'internet', 'luz')"
+                    ),
+                    "amount": types.Schema(
+                        type=types.Type.NUMBER,
+                        description="Monto mensual en COP"
+                    ),
+                    "category": types.Schema(
+                        type=types.Type.STRING,
+                        description="Categoría del gasto",
+                        enum=["comida", "transporte", "entretenimiento", "servicios", "salud", "general"]
+                    ),
+                    "day_of_month": types.Schema(
+                        type=types.Type.INTEGER,
+                        description="Día del mes en que vence (1-31)"
+                    )
+                },
+                required=["description", "amount", "category", "day_of_month"]
+            )
+        ),
+        
+        types.FunctionDeclaration(
+            name="get_recurring_expenses",
+            description="Lista todos los gastos fijos mensuales configurados. Usa cuando pregunten por gastos fijos o facturas recurrentes.",
+            parameters=types.Schema(
+                type=types.Type.OBJECT,
+                properties={},
+                required=[]
+            )
+        ),
+        
+        types.FunctionDeclaration(
+            name="get_pending_payments",
+            description="Obtiene facturas pendientes de pago del mes actual. Usa cuando pregunten qué facturas faltan por pagar.",
+            parameters=types.Schema(
+                type=types.Type.OBJECT,
+                properties={},
+                required=[]
+            )
+        ),
+        
+        types.FunctionDeclaration(
+            name="mark_bill_paid",
+            description="Marca una factura/gasto fijo como pagado este mes. Usa cuando digan 'pagué X' refiriéndose a un gasto fijo.",
+            parameters=types.Schema(
+                type=types.Type.OBJECT,
+                properties={
+                    "recurring_expense_id": types.Schema(
+                        type=types.Type.INTEGER,
+                        description="ID del gasto fijo a marcar como pagado (obtener de get_pending_payments)"
+                    )
+                },
+                required=["recurring_expense_id"]
             )
         )
     ]
 )
 
 logger.info("✅ Herramientas de Gemini configuradas correctamente")
+
+
+# ============================================
+# AI WRAPPER - Función unificada para ambos providers
+# ============================================
+
+def generate_ai_response(user_message: str):
+    """
+    Genera una respuesta usando el AI provider configurado (Gemini o ChatGPT).
+    Retorna un objeto unificado con la respuesta y function calls.
+    """
+    if AI_PROVIDER == "chatgpt":
+        # ===== CHATGPT =====
+        # Convertir tools al formato de OpenAI
+        openai_tools = []
+        for func_decl in all_tools.function_declarations:
+            tool_def = {
+                "type": "function",
+                "function": {
+                    "name": func_decl.name,
+                    "description": func_decl.description,
+                    "parameters": _gemini_schema_to_openai(func_decl.parameters)
+                }
+            }
+            openai_tools.append(tool_def)
+        
+        # Llamar a ChatGPT
+        response = openai.chat.completions.create(
+            model="gpt-4o-mini",  # Puedes usar gpt-4, gpt-3.5-turbo, etc.
+            messages=[
+                {"role": "system", "content": SYSTEM_INSTRUCTION},
+                {"role": "user", "content": user_message}
+            ],
+            tools=openai_tools,
+            tool_choice="auto"
+        )
+        
+        return response
+    
+    else:
+        # ===== GEMINI =====
+        response = gemini_client.models.generate_content(
+            model='models/gemini-2.5-flash',
+            contents=user_message,
+            config=types.GenerateContentConfig(
+                system_instruction=SYSTEM_INSTRUCTION,
+                tools=[all_tools],
+                temperature=0.7
+            )
+        )
+        
+        return response
+
+
+def _gemini_schema_to_openai(gemini_schema):
+    """Convierte el schema de Gemini al formato de OpenAI."""
+    if not gemini_schema:
+        return {"type": "object", "properties": {}}
+    
+    openai_schema = {
+        "type": "object",
+        "properties": {},
+        "required": []
+    }
+    
+    if hasattr(gemini_schema, 'properties') and gemini_schema.properties:
+        for prop_name, prop_schema in gemini_schema.properties.items():
+            prop_def = {}
+            
+            # Mapear tipo
+            if prop_schema.type == types.Type.STRING:
+                prop_def["type"] = "string"
+            elif prop_schema.type == types.Type.NUMBER:
+                prop_def["type"] = "number"
+            elif prop_schema.type == types.Type.INTEGER:
+                prop_def["type"] = "integer"
+            elif prop_schema.type == types.Type.BOOLEAN:
+                prop_def["type"] = "boolean"
+            else:
+                prop_def["type"] = "string"
+            
+            # Añadir descripción
+            if hasattr(prop_schema, 'description'):
+                prop_def["description"] = prop_schema.description
+            
+            # Añadir enum si existe
+            if hasattr(prop_schema, 'enum') and prop_schema.enum:
+                prop_def["enum"] = list(prop_schema.enum)
+            
+            openai_schema["properties"][prop_name] = prop_def
+    
+    # Añadir campos requeridos
+    if hasattr(gemini_schema, 'required') and gemini_schema.required:
+        openai_schema["required"] = list(gemini_schema.required)
+    
+    return openai_schema
+
+
+# ============================================
+# TELEGRAM COMMAND HANDLERS
+# ============================================
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -140,25 +403,37 @@ Puedo ayudarte a:
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Maneja el comando /help"""
     help_text = """
-🤖 **Comandos disponibles:**
+🤖 **Asistente Financiero - Guía Completa**
 
-/start - Iniciar el bot
-/help - Mostrar esta ayuda
-/gastos - Ver tus últimos gastos
-
-**Cómo usar el bot:**
-
-📝 Para registrar un gasto, simplemente escribe:
+📝 **REGISTRAR GASTOS:**
 • "Gasté 15k en café"
 • "Pagué 80 mil de taxi"
 • "Compré comida por 25000"
 
-📊 Para ver tus gastos:
-• "Muéstrame mis gastos"
-• "¿Cuánto he gastado?"
-• Usa el comando /gastos
+📊 **CONSULTAR GASTOS:**
+• "Cuánto gasté hoy?"
+• "Muéstrame los gastos de esta semana"
+• "Cuánto he gastado en comida?"
+• "Ver mis últimos gastos"
 
-¡Así de fácil! 🎉
+📈 **ANÁLISIS:**
+• "En qué categoría gasto más?"
+• "Resumen por categorías"
+
+💰 **GASTOS FIJOS (FACTURAS):**
+• "Registra internet de 60k el día 18"
+• "Qué facturas tengo pendientes?"
+• "Ver mis gastos fijos"
+• "Pagué la luz" (marcar como pagada)
+
+**Comandos:**
+/start - Iniciar bot
+/help - Esta ayuda
+/gastos - Ver últimos gastos
+/resumen - Análisis de categorías
+/facturas - Facturas pendientes
+
+¡Prueba preguntarme en lenguaje natural! 🎉
     """
     await update.message.reply_text(help_text, parse_mode='Markdown')
 
@@ -175,9 +450,33 @@ async def gastos_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         )
 
 
+async def resumen_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Maneja el comando /resumen - muestra análisis por categorías"""
+    try:
+        summary_text = get_category_summary()
+        await update.message.reply_text(summary_text, parse_mode='Markdown')
+    except Exception as e:
+        logger.error(f"Error en /resumen: {e}")
+        await update.message.reply_text(
+            "❌ Error al generar el resumen. Intenta de nuevo más tarde."
+        )
+
+
+async def facturas_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Maneja el comando /facturas - muestra facturas pendientes"""
+    try:
+        pending_text = get_pending_payments()
+        await update.message.reply_text(pending_text, parse_mode='Markdown')
+    except Exception as e:
+        logger.error(f"Error en /facturas: {e}")
+        await update.message.reply_text(
+            "❌ Error al consultar facturas. Intenta de nuevo más tarde."
+        )
+
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
-    Maneja todos los mensajes del usuario usando Gemini AI con Function Calling
+    Maneja todos los mensajes del usuario usando AI (Gemini o ChatGPT) con Function Calling
     """
     user_message = update.message.text
     user_id = update.effective_user.id
@@ -185,64 +484,131 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     logger.info(f"Usuario {user_id}: {user_message}")
     
     try:
-        # Enviar mensaje del usuario a Gemini con la NUEVA API
-        # NOTA: Usar 'models/gemini-2.5-flash' que es el modelo disponible
-        response = client.models.generate_content(
-            model='models/gemini-2.5-flash',
-            contents=user_message,
-            config=types.GenerateContentConfig(
-                system_instruction=SYSTEM_INSTRUCTION,
-                tools=[add_expense_tool],
-                temperature=0.7
-            )
-        )
+        # Generar respuesta con el AI provider configurado
+        response = generate_ai_response(user_message)
         
-        # Verificar si hay function calls en la respuesta
-        if response.candidates and response.candidates[0].content.parts:
-            for part in response.candidates[0].content.parts:
-                # Si hay una llamada a función
-                if hasattr(part, 'function_call') and part.function_call:
-                    function_call = part.function_call
-                    function_name = function_call.name
-                    function_args = dict(function_call.args)
+        # ===== PROCESAR RESPUESTA SEGÚN PROVIDER =====
+        if AI_PROVIDER == "chatgpt":
+            # CHATGPT: Revisar tool_calls
+            message = response.choices[0].message
+            
+            if message.tool_calls:
+                # Hay llamadas a funciones
+                for tool_call in message.tool_calls:
+                    function_name = tool_call.function.name
+                    import json
+                    function_args = json.loads(tool_call.function.arguments)
                     
-                    logger.info(f"🤖 Gemini llama a función: {function_name} con args: {function_args}")
+                    logger.info(f"🤖 ChatGPT llama a función: {function_name} con args: {function_args}")
                     
-                    # Ejecutar la función correspondiente
-                    if function_name == "add_expense":
-                        result = add_expense(
-                            amount=function_args.get("amount"),
-                            description=function_args.get("description"),
-                            category=function_args.get("category")
-                        )
-                        await update.message.reply_text(result["message"])
-                        
-                    elif function_name == "get_recent_expenses":
-                        expenses_text = get_recent_expenses()
-                        await update.message.reply_text(expenses_text, parse_mode='Markdown')
-                        
-                    else:
-                        logger.warning(f"⚠️ Función desconocida: {function_name}")
-                        await update.message.reply_text(
-                            "⚠️ No puedo procesar esa solicitud en este momento."
-                        )
-                
-                # Si es solo texto (respuesta normal sin función)
-                elif hasattr(part, 'text') and part.text:
-                    await update.message.reply_text(part.text, parse_mode='Markdown')
+                    # Ejecutar función
+                    await _execute_function(function_name, function_args, update)
+            
+            elif message.content:
+                # Respuesta de texto normal
+                await update.message.reply_text(message.content, parse_mode='Markdown')
+            else:
+                await update.message.reply_text(
+                    "🤔 No estoy seguro de cómo ayudarte con eso. ¿Puedes reformular tu pregunta?"
+                )
         
-        # Si no hay partes en la respuesta
         else:
-            await update.message.reply_text(
-                "🤔 No estoy seguro de cómo ayudarte con eso. ¿Puedes reformular tu pregunta?"
-            )
+            # GEMINI: Revisar function_call en parts
+            if response.candidates and response.candidates[0].content.parts:
+                for part in response.candidates[0].content.parts:
+                    # Si hay una llamada a función
+                    if hasattr(part, 'function_call') and part.function_call:
+                        function_call = part.function_call
+                        function_name = function_call.name
+                        function_args = dict(function_call.args)
+                        
+                        logger.info(f"🤖 Gemini llama a función: {function_name} con args: {function_args}")
+                        
+                        # Ejecutar función
+                        await _execute_function(function_name, function_args, update)
+                    
+                    # Si es solo texto (respuesta normal sin función)
+                    elif hasattr(part, 'text') and part.text:
+                        await update.message.reply_text(part.text, parse_mode='Markdown')
+            
+            # Si no hay partes en la respuesta
+            else:
+                await update.message.reply_text(
+                    "🤔 No estoy seguro de cómo ayudarte con eso. ¿Puedes reformular tu pregunta?"
+                )
         
     except Exception as e:
         logger.error(f"❌ Error procesando mensaje: {e}")
         import traceback
         traceback.print_exc()
         await update.message.reply_text(
-            "❌ Hubo un error procesando tu mensaje. Por favor, intenta de nuevo."
+            "❌ MY nigga, hay un error, lea el codigo"
+        )
+
+
+async def _execute_function(function_name: str, function_args: dict, update: Update):
+    """Ejecuta la función correspondiente basado en el nombre y argumentos."""
+    
+    # === GASTOS NORMALES ===
+    if function_name == "add_expense":
+        result = add_expense(
+            amount=function_args.get("amount"),
+            description=function_args.get("description"),
+            category=function_args.get("category")
+        )
+        await update.message.reply_text(result["message"])
+        
+    elif function_name == "get_recent_expenses":
+        expenses_text = get_recent_expenses()
+        await update.message.reply_text(expenses_text, parse_mode='Markdown')
+    
+    # === CONSULTAS POR PERÍODO ===
+    elif function_name == "get_expenses_by_day":
+        date = function_args.get("date")
+        result = get_expenses_by_day(date)
+        await update.message.reply_text(result, parse_mode='Markdown')
+    
+    elif function_name == "get_expenses_by_week":
+        result = get_expenses_by_week()
+        await update.message.reply_text(result, parse_mode='Markdown')
+    
+    elif function_name == "get_expenses_by_category":
+        category = function_args.get("category")
+        result = get_expenses_by_category(category)
+        await update.message.reply_text(result, parse_mode='Markdown')
+    
+    # === ANÁLISIS ===
+    elif function_name == "get_category_summary":
+        result = get_category_summary()
+        await update.message.reply_text(result, parse_mode='Markdown')
+    
+    # === GASTOS FIJOS / FACTURAS ===
+    elif function_name == "add_recurring_expense":
+        result = add_recurring_expense(
+            description=function_args.get("description"),
+            amount=function_args.get("amount"),
+            category=function_args.get("category"),
+            day_of_month=function_args.get("day_of_month")
+        )
+        await update.message.reply_text(result["message"])
+    
+    elif function_name == "get_recurring_expenses":
+        result = get_recurring_expenses()
+        await update.message.reply_text(result, parse_mode='Markdown')
+    
+    elif function_name == "get_pending_payments":
+        result = get_pending_payments()
+        await update.message.reply_text(result, parse_mode='Markdown')
+    
+    elif function_name == "mark_bill_paid":
+        recurring_id = function_args.get("recurring_expense_id")
+        result = mark_payment_done(recurring_id)
+        await update.message.reply_text(result["message"])
+        
+    else:
+        logger.warning(f"⚠️ Función desconocida: {function_name}")
+        await update.message.reply_text(
+            "⚠️ No puedo procesar esa solicitud en este momento."
         )
 
 
@@ -264,6 +630,8 @@ def main() -> None:
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(CommandHandler("gastos", gastos_command))
+    application.add_handler(CommandHandler("resumen", resumen_command))
+    application.add_handler(CommandHandler("facturas", facturas_command))
     
     # Handler para mensajes de texto (mensajes normales del usuario)
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))

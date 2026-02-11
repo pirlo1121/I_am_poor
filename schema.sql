@@ -1,0 +1,78 @@
+-- ============================================
+-- Script SQL para crear tablas del Bot Financiero
+-- ============================================
+
+-- 1. ELIMINAR TABLAS EXISTENTES (si necesitas empezar limpio)
+-- Descomentar solo si quieres resetear todo
+-- DROP TABLE IF EXISTS pagos_realizados CASCADE;
+-- DROP TABLE IF EXISTS gastos_fijos CASCADE;
+-- DROP TABLE IF EXISTS gastos CASCADE;
+
+-- ============================================
+-- 2. CREAR TABLA GASTOS (Principal)
+-- ============================================
+CREATE TABLE IF NOT EXISTS gastos (
+  id BIGSERIAL PRIMARY KEY,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  amount FLOAT NOT NULL,
+  description TEXT NOT NULL,
+  category TEXT NOT NULL
+);
+
+-- ============================================
+-- 3. CREAR TABLA GASTOS FIJOS (Recurrentes)
+-- ============================================
+CREATE TABLE IF NOT EXISTS gastos_fijos (
+  id BIGSERIAL PRIMARY KEY,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  description TEXT NOT NULL,
+  amount FLOAT NOT NULL,
+  category TEXT NOT NULL,
+  day_of_month INTEGER NOT NULL CHECK (day_of_month >= 1 AND day_of_month <= 31),
+  active BOOLEAN DEFAULT TRUE,
+  
+  -- Índices para mejorar queries
+  CONSTRAINT valid_day_range CHECK (day_of_month BETWEEN 1 AND 31)
+);
+
+-- Índice para búsquedas rápidas por estado activo
+CREATE INDEX IF NOT EXISTS idx_gastos_fijos_active ON gastos_fijos(active);
+
+-- ============================================
+-- 4. CREAR TABLA PAGOS REALIZADOS (Tracking)
+-- ============================================
+CREATE TABLE IF NOT EXISTS pagos_realizados (
+  id BIGSERIAL PRIMARY KEY,
+  gasto_fijo_id BIGINT NOT NULL REFERENCES gastos_fijos(id) ON DELETE CASCADE,
+  paid_at TIMESTAMPTZ DEFAULT NOW(),
+  month INTEGER NOT NULL CHECK (month >= 1 AND month <= 12),
+  year INTEGER NOT NULL CHECK (year >= 2020),
+  amount FLOAT NOT NULL,
+  
+  -- Evitar pagos duplicados del mismo gasto en el mismo mes
+  UNIQUE(gasto_fijo_id, month, year)
+);
+
+-- Índices para búsquedas rápidas
+CREATE INDEX IF NOT EXISTS idx_pagos_gasto_fijo ON pagos_realizados(gasto_fijo_id);
+CREATE INDEX IF NOT EXISTS idx_pagos_month_year ON pagos_realizados(month, year);
+
+-- ============================================
+-- 5. VERIFICAR TABLAS CREADAS
+-- ============================================
+SELECT 'Tablas creadas exitosamente!' as status;
+
+-- Ver estructura de gastos
+SELECT column_name, data_type 
+FROM information_schema.columns 
+WHERE table_name = 'gastos';
+
+-- Ver estructura de gastos_fijos
+SELECT column_name, data_type 
+FROM information_schema.columns 
+WHERE table_name = 'gastos_fijos';
+
+-- Ver estructura de pagos_realizados
+SELECT column_name, data_type 
+FROM information_schema.columns 
+WHERE table_name = 'pagos_realizados';
