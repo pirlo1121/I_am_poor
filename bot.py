@@ -76,7 +76,36 @@ else:
 
 # System Instruction para Gemini (comportamiento del asistente)
 SYSTEM_INSTRUCTION = """
-Eres un contador personal estricto y profesional llamado "Asistente Financiero".
+Eres un contador personal amigable y dinámico llamado "Asistente Financiero".
+
+🎯 PERSONALIDAD:
+- Habla de manera natural, conversacional y amigable
+- Usa emojis para hacer las respuestas más dinámicas  
+- Evita respuestas robóticas o muy técnicas
+- Sé entusiasta y positivo cuando registres gastos exitosamente
+- Muestra empatía cuando los gastos sean altos
+- Celebra cuando ahorren dinero
+
+IMPORTANTE: NO copies literalmente el formato de las respuestas del backend. 
+Cuando recibas datos de la base de datos, reformúlalos de manera NATURAL y CONVERSACIONAL.
+
+EJEMPLOS DE CÓMO RESPONDER:
+
+❌ MAL (robótico):
+"✅ Gasto registrado: 20000 COP - café - categoría: comida"
+
+✅ BIEN (natural):
+"¡Listo! 😊 Registré tu café de $20,000 en comida. Espero que haya estado delicioso ☕"
+
+❌ MAL (frío):
+"📊 Gastos del día:
+- Café: 20,000 COP
+- Uber: 15,000 COP
+Total: 35,000 COP"
+
+✅ BIEN (cálido):
+"Hoy has gastado $35,000 💰
+Veo que compraste café ($20k) y tomaste un Uber ($15k). ¡Un día bastante normal! 😊"
 
 Tu trabajo es ayudar al usuario a:
 1. Registrar gastos normales con DETECCIÓN INTELIGENTE de tiendas
@@ -135,14 +164,8 @@ REGLAS IMPORTANTES:
 - **comida** es para restaurantes, cafés, snacks individuales
 - Para gastos fijos, el día debe estar entre 1 y 31
 - Todas las consultas muestran solo el mes actual por defecto
-- Sé conciso, profesional y amigable
-
-Ejemplos:
-Usuario: "322 mil D1" → add_expense(322000, "D1", "mercado")
-Usuario: "Gasté 5k en café" → add_expense(5000, "café", "comida")
-Usuario: "arriendo pagado" → find_recurring_by_name("arriendo") → mark_bill_paid(id_encontrado)
-Usuario: "Gastos de enero" → get_expenses_by_month(1, 2026)
-Usuario: "Compara enero con diciembre" → compare_monthly_expenses(12, 2025, 1, 2026)
+- SIEMPRE reformula las respuestas del backend de manera natural
+- Usa emojis para hacerlo más amigable: 💰 📊 ✅ 🎉 😊 ☕ 🚕 🛒
 """
 
 # Definir las herramientas (Tools) para Gemini Function Calling - NUEVA SINTAXIS
@@ -353,6 +376,16 @@ all_tools = types.Tool(
     ]
 )
 
+# ============================================
+# GESTIÓN DE SESIONES POR USUARIO
+# ============================================
+# Diccionario para guardar el historial de chat de cada usuario
+user_sessions = {}
+
+# Límite de mensajes en el historial (para evitar que crezca infinitamente)
+# Se mantienen los últimos N mensajes para tener contexto útil sin sobrecargar la API
+MAX_HISTORY_MESSAGES = 20  # 10 intercambios (usuario + asistente)
+
 logger.info("✅ Herramientas de Gemini configuradas correctamente")
 
 
@@ -360,10 +393,14 @@ logger.info("✅ Herramientas de Gemini configuradas correctamente")
 # AI WRAPPER - Función unificada para ambos providers
 # ============================================
 
-def generate_ai_response(user_message: str):
+def generate_ai_response(user_message: str, chat_session=None):
     """
     Genera una respuesta usando el AI provider configurado (Gemini o ChatGPT).
     Retorna un objeto unificado con la respuesta y function calls.
+    
+    Args:
+        user_message: El mensaje del usuario
+        chat_session: Para Gemini: sesión de chat. Para ChatGPT: lista de mensajes de historial
     """
     if AI_PROVIDER == "chatgpt":
         # ===== CHATGPT =====
@@ -380,13 +417,20 @@ def generate_ai_response(user_message: str):
             }
             openai_tools.append(tool_def)
         
+        # Construir mensajes con historial
+        messages = [{"role": "system", "content": SYSTEM_INSTRUCTION}]
+        
+        # Si hay historial, agregarlo
+        if chat_session and isinstance(chat_session, list):
+            messages.extend(chat_session)
+        
+        # Agregar mensaje actual del usuario
+        messages.append({"role": "user", "content": user_message})
+        
         # Llamar a ChatGPT
         response = openai.chat.completions.create(
-            model="gpt-4o-mini",  # Puedes usar gpt-4, gpt-3.5-turbo, etc.
-            messages=[
-                {"role": "system", "content": SYSTEM_INSTRUCTION},
-                {"role": "user", "content": user_message}
-            ],
+            model="gpt-4o-mini",
+            messages=messages,
             tools=openai_tools,
             tool_choice="auto"
         )
@@ -395,15 +439,20 @@ def generate_ai_response(user_message: str):
     
     else:
         # ===== GEMINI =====
-        response = gemini_client.models.generate_content(
-            model='models/gemini-2.5-flash',
-            contents=user_message,
-            config=types.GenerateContentConfig(
-                system_instruction=SYSTEM_INSTRUCTION,
-                tools=[all_tools],
-                temperature=0.7
+        # Si hay una sesión de chat existente, usar send_message
+        if chat_session:
+            response = chat_session.send_message(user_message)
+        else:
+            # Modo stateless (para compatibilidad hacia atrás)
+            response = gemini_client.models.generate_content(
+                model='models/gemini-2.5-flash',
+                contents=user_message,
+                config=types.GenerateContentConfig(
+                    system_instruction=SYSTEM_INSTRUCTION,
+                    tools=[all_tools],
+                    temperature=0.7
+                )
             )
-        )
         
         return response
 
@@ -555,23 +604,65 @@ async def facturas_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """
     Maneja todos los mensajes del usuario usando AI (Gemini o ChatGPT) con Function Calling
+    y gestión de sesiones por usuario para mantener contexto conversacional.
     """
     user_message = update.message.text
     user_id = update.effective_user.id
     
     logger.info(f"Usuario {user_id}: {user_message}")
     
+    # ============================================
+    # GESTIÓN DE SESIÓN DE CHAT POR USUARIO
+    # ============================================
+    
+    # Verificar si el usuario ya tiene una sesión
+    if user_id not in user_sessions:
+        # Si NO existe: Crear una nueva sesión de chat
+        if AI_PROVIDER == "gemini":
+            logger.info(f"🆕 Creando nueva sesión Gemini para usuario {user_id}")
+            # Crear sesión de chat con historial vacío
+            model = gemini_client.models.get_generative_model(
+                model='models/gemini-2.5-flash',
+                config=types.GenerateContentConfig(
+                    system_instruction=SYSTEM_INSTRUCTION,
+                    tools=[all_tools],
+                    temperature=0.7
+                )
+            )
+            chat_session = model.start_chat(history=[])
+            user_sessions[user_id] = chat_session
+        else:
+            # Para ChatGPT, guardamos el historial de mensajes como lista
+            logger.info(f"🆕 Creando nuevo historial ChatGPT para usuario {user_id}")
+            user_sessions[user_id] = []  # Lista vacía de mensajes
+    else:
+        # Si SÍ existe: Recuperar la sesión guardada
+        logger.info(f"♻️ Usando sesión existente para usuario {user_id}")
+    
     try:
+        # Obtener la sesión del usuario
+        chat_session = user_sessions.get(user_id)
+        
         # Generar respuesta con el AI provider configurado
-        response = generate_ai_response(user_message)
+        response = generate_ai_response(user_message, chat_session)
         
         # ===== PROCESAR RESPUESTA SEGÚN PROVIDER =====
         if AI_PROVIDER == "chatgpt":
             # CHATGPT: Revisar tool_calls
             message = response.choices[0].message
             
+            # Guardar mensaje del usuario en el historial
+            user_sessions[user_id].append({"role": "user", "content": user_message})
+            
+            # Limitar el historial a los últimos MAX_HISTORY_MESSAGES mensajes
+            if len(user_sessions[user_id]) > MAX_HISTORY_MESSAGES:
+                # Mantener solo los últimos mensajes (ventana deslizante)
+                user_sessions[user_id] = user_sessions[user_id][-MAX_HISTORY_MESSAGES:]
+                logger.info(f"📦 Historial limitado a {MAX_HISTORY_MESSAGES} mensajes para usuario {user_id}")
+            
             if message.tool_calls:
-                # Hay llamadas a funciones
+                # Hay llamadas a funciones - recopilar resultados
+                function_results = []
                 for tool_call in message.tool_calls:
                     function_name = tool_call.function.name
                     import json
@@ -579,20 +670,60 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                     
                     logger.info(f"🤖 ChatGPT llama a función: {function_name} con args: {function_args}")
                     
-                    # Ejecutar función
-                    await _execute_function(function_name, function_args, update)
+                    # Ejecutar función y obtener resultado
+                    function_result = await _execute_function(function_name, function_args, update)
+                    function_results.append({
+                        "tool_call_id": tool_call.id,
+                        "role": "tool",
+                        "name": function_name,
+                        "content": function_result
+                    })
+                
+                # Guardar mensaje del asistente con tool_calls en historial
+                user_sessions[user_id].append({
+                    "role": "assistant",
+                    "content": message.content if message.content else "",
+                    "tool_calls": [{
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {"name": tc.function.name, "arguments": tc.function.arguments}
+                    } for tc in message.tool_calls]
+                })
+                
+                # Agregar resultados de funciones al historial
+                user_sessions[user_id].extend(function_results)
+                
+                # Hacer segunda llamada a ChatGPT para que procese los resultados y genere respuesta natural
+                logger.info("🔄 Enviando resultados a ChatGPT para generar respuesta natural")
+                second_response = generate_ai_response("", user_sessions[user_id])
+                final_message = second_response.choices[0].message
+                
+                if final_message.content:
+                    await update.message.reply_text(final_message.content, parse_mode='Markdown')
+                    user_sessions[user_id].append({"role": "assistant", "content": final_message.content})
             
             elif message.content:
                 # Respuesta de texto normal
                 await update.message.reply_text(message.content, parse_mode='Markdown')
+                
+                # Guardar respuesta del asistente en el historial
+                user_sessions[user_id].append({"role": "assistant", "content": message.content})
             else:
                 await update.message.reply_text(
                     "🤔 No estoy seguro de cómo ayudarte con eso. ¿Puedes reformular tu pregunta?"
                 )
+                user_sessions[user_id].append({
+                    "role": "assistant", 
+                    "content": "🤔 No estoy seguro de cómo ayudarte con eso. ¿Puedes reformular tu pregunta?"
+                })
         
         else:
             # GEMINI: Revisar function_call en parts
             if response.candidates and response.candidates[0].content.parts:
+                # Buscar si hay function calls y recopilar resultados
+                function_calls_found = []
+                text_responses = []
+                
                 for part in response.candidates[0].content.parts:
                     # Si hay una llamada a función
                     if hasattr(part, 'function_call') and part.function_call:
@@ -602,12 +733,42 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                         
                         logger.info(f"🤖 Gemini llama a función: {function_name} con args: {function_args}")
                         
-                        # Ejecutar función
-                        await _execute_function(function_name, function_args, update)
+                        # Ejecutar función y guardar resultado
+                        function_result = await _execute_function(function_name, function_args, update)
+                        function_calls_found.append({
+                            "name": function_name,
+                            "result": function_result
+                        })
                     
-                    # Si es solo texto (respuesta normal sin función)
+                    # Si es solo texto
                     elif hasattr(part, 'text') and part.text:
-                        await update.message.reply_text(part.text, parse_mode='Markdown')
+                        text_responses.append(part.text)
+                
+                # Si hubo function calls, enviar resultados de vuelta a Gemini para respuesta natural
+                if function_calls_found:
+                    logger.info("🔄 Enviando resultados a Gemini para generar respuesta natural")
+                    
+                    # Construir mensaje con los resultados de las funciones
+                    for fc in function_calls_found:
+                        # Enviar resultado de función de vuelta al chat
+                        function_response_part = types.Part.from_function_response(
+                            name=fc["name"],
+                            response={"result": fc["result"]}
+                        )
+                        
+                        # Obtener respuesta final de Gemini procesando el resultado
+                        final_response = chat_session.send_message(function_response_part)
+                        
+                        # Enviar la respuesta natural al usuario
+                        if final_response.candidates and final_response.candidates[0].content.parts:
+                            for final_part in final_response.candidates[0].content.parts:
+                                if hasattr(final_part, 'text') and final_part.text:
+                                    await update.message.reply_text(final_part.text, parse_mode='Markdown')
+                
+                # Si solo hay texto (sin function calls)
+                elif text_responses:
+                    for text in text_responses:
+                        await update.message.reply_text(text, parse_mode='Markdown')
             
             # Si no hay partes en la respuesta
             else:
@@ -616,107 +777,151 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 )
         
     except Exception as e:
-        logger.error(f"❌ Error procesando mensaje: {e}")
+        logger.error(f"❌ Error procesando mensaje (user_id={user_id}): {e}")
         import traceback
-        traceback.print_exc()
-        await update.message.reply_text(
-            "❌ MY nigga, hay un error, lea el codigo"
-        )
-
-
-async def _execute_function(function_name: str, function_args: dict, update: Update):
-    """Ejecuta la función correspondiente basado en el nombre y argumentos."""
-    
-    # === GASTOS NORMALES ===
-    if function_name == "add_expense":
-        result = add_expense(
-            amount=function_args.get("amount"),
-            description=function_args.get("description"),
-            category=function_args.get("category")
-        )
-        await update.message.reply_text(result["message"])
+        error_traceback = traceback.format_exc()
+        logger.error(error_traceback)
         
-    elif function_name == "get_recent_expenses":
-        expenses_text = get_recent_expenses()
-        await update.message.reply_text(expenses_text, parse_mode='Markdown')
-    
-    # === CONSULTAS POR PERÍODO ===
-    elif function_name == "get_expenses_by_day":
-        date = function_args.get("date")
-        result = get_expenses_by_day(date)
-        await update.message.reply_text(result, parse_mode='Markdown')
-    
-    elif function_name == "get_expenses_by_week":
-        result = get_expenses_by_week()
-        await update.message.reply_text(result, parse_mode='Markdown')
-    
-    elif function_name == "get_expenses_by_category":
-        category = function_args.get("category")
-        result = get_expenses_by_category(category)
-        await update.message.reply_text(result, parse_mode='Markdown')
-    
-    # === ANÁLISIS ===
-    elif function_name == "get_category_summary":
-        result = get_category_summary()
-        await update.message.reply_text(result, parse_mode='Markdown')
-    
-    # === GASTOS FIJOS / FACTURAS ===
-    elif function_name == "add_recurring_expense":
-        result = add_recurring_expense(
-            description=function_args.get("description"),
-            amount=function_args.get("amount"),
-            category=function_args.get("category"),
-            day_of_month=function_args.get("day_of_month")
-        )
-        await update.message.reply_text(result["message"])
-    
-    elif function_name == "get_recurring_expenses":
-        result = get_recurring_expenses()
-        await update.message.reply_text(result, parse_mode='Markdown')
-    
-    elif function_name == "get_pending_payments":
-        result = get_pending_payments()
-        await update.message.reply_text(result, parse_mode='Markdown')
-    
-    elif function_name == "mark_bill_paid":
-        recurring_id = function_args.get("recurring_expense_id")
-        result = mark_payment_done(recurring_id)
-        await update.message.reply_text(result["message"])
-    
-    # === NUEVAS FUNCIONES - MEJORAS ===
-    elif function_name == "get_expenses_by_month":
-        month = function_args.get("month")
-        year = function_args.get("year")
-        result = get_expenses_by_month(month, year)
-        await update.message.reply_text(result, parse_mode='Markdown')
-    
-    elif function_name == "compare_monthly_expenses":
-        month1 = function_args.get("month1")
-        year1 = function_args.get("year1")
-        month2 = function_args.get("month2")
-        year2 = function_args.get("year2")
-        result = compare_monthly_expenses(month1, year1, month2, year2)
-        await update.message.reply_text(result, parse_mode='Markdown')
-    
-    elif function_name == "find_recurring_by_name":
-        description = function_args.get("description")
-        recurring_id = find_recurring_by_name(description)
+        # ============================================
+        # MANEJO DE ERRORES INTELIGENTE
+        # ============================================
+        # Solo reiniciar sesión si es un error crítico de API
+        # Errores menores no deberían borrar el historial
         
-        if recurring_id:
-            # Automáticamente marcar como pagado
-            result = mark_payment_done(recurring_id)
-            await update.message.reply_text(result["message"])
-        else:
+        error_str = str(e).lower()
+        critical_errors = [
+            'invalid api key',
+            'quota exceeded',
+            'rate limit',
+            'authentication',
+            'unauthorized',
+            'invalid_request_error'
+        ]
+        
+        # Verificar si es un error crítico que requiere reinicio
+        is_critical = any(err in error_str for err in critical_errors)
+        
+        if is_critical:
+            # Error crítico: Reiniciar sesión
+            logger.warning(f"🔄 Error CRÍTICO detectado. Reiniciando sesión para usuario {user_id}")
+            
+            if user_id in user_sessions:
+                del user_sessions[user_id]
+            
+            # Crear nueva sesión
+            if AI_PROVIDER == "gemini":
+                model = gemini_client.models.get_generative_model(
+                    model='models/gemini-2.5-flash',
+                    config=types.GenerateContentConfig(
+                        system_instruction=SYSTEM_INSTRUCTION,
+                        tools=[all_tools],
+                        temperature=0.7
+                    )
+                )
+                user_sessions[user_id] = model.start_chat(history=[])
+            else:
+                user_sessions[user_id] = []
+            
             await update.message.reply_text(
-                f"❌ No encontré ningún gasto fijo con el nombre '{description}'.\n"
-                f"Usa /fijos o 'ver gastos fijos' para ver la lista completa."
+                "⚠️ Hubo un error crítico con la API. He reiniciado tu sesión de chat.\n"
+                "Tu historial se ha borrado, pero puedes continuar desde aquí."
             )
+        else:
+            # Error menor: Mantener sesión pero informar al usuario
+            logger.warning(f"⚠️ Error menor detectado. Manteniendo sesión para usuario {user_id}")
+            await update.message.reply_text(
+                "❌ Hubo un problema procesando tu mensaje. Tu historial se mantiene intacto.\n"
+                "Por favor, intenta de nuevo o reformula tu pregunta."
+            )
+
+
+async def _execute_function(function_name: str, function_args: dict, update: Update) -> str:
+    """
+    Ejecuta la función correspondiente y RETORNA el resultado como string.
+    La respuesta será procesada por la IA para generar una respuesta natural.
+    """
+    
+    try:
+        # === GASTOS NORMALES ===
+        if function_name == "add_expense":
+            result = add_expense(
+                amount=function_args.get("amount"),
+                description=function_args.get("description"),
+                category=function_args.get("category")
+            )
+            return result["message"]
+            
+        elif function_name == "get_recent_expenses":
+            return get_recent_expenses()
         
-    else:
-        logger.warning(f"⚠️ Función desconocida: {function_name}")
-        await update.message.reply_text(
-            "⚠️ No puedo procesar esa solicitud en este momento."
-        )
+        # === CONSULTAS POR PERÍODO ===
+        elif function_name == "get_expenses_by_day":
+            date = function_args.get("date")
+            return get_expenses_by_day(date)
+        
+        elif function_name == "get_expenses_by_week":
+            return get_expenses_by_week()
+        
+        elif function_name == "get_expenses_by_category":
+            category = function_args.get("category")
+            return get_expenses_by_category(category)
+        
+        # === ANÁLISIS ===
+        elif function_name == "get_category_summary":
+            return get_category_summary()
+        
+        # === GASTOS FIJOS / FACTURAS ===
+        elif function_name == "add_recurring_expense":
+            result = add_recurring_expense(
+                description=function_args.get("description"),
+                amount=function_args.get("amount"),
+                category=function_args.get("category"),
+                day_of_month=function_args.get("day_of_month")
+            )
+            return result["message"]
+        
+        elif function_name == "get_recurring_expenses":
+            return get_recurring_expenses()
+        
+        elif function_name == "get_pending_payments":
+            return get_pending_payments()
+        
+        elif function_name == "mark_bill_paid":
+            recurring_id = function_args.get("recurring_expense_id")
+            result = mark_payment_done(recurring_id)
+            return result["message"]
+        
+        # === NUEVAS FUNCIONES - MEJORAS ===
+        elif function_name == "get_expenses_by_month":
+            month = function_args.get("month")
+            year = function_args.get("year")
+            return get_expenses_by_month(month, year)
+        
+        elif function_name == "compare_monthly_expenses":
+            month1 = function_args.get("month1")
+            year1 = function_args.get("year1")
+            month2 = function_args.get("month2")
+            year2 = function_args.get("year2")
+            return compare_monthly_expenses(month1, year1, month2, year2)
+        
+        elif function_name == "find_recurring_by_name":
+            description = function_args.get("description")
+            recurring_id = find_recurring_by_name(description)
+            
+            if recurring_id:
+                # Automáticamente marcar como pagado
+                result = mark_payment_done(recurring_id)
+                return result["message"]
+            else:
+                return f"❌ No encontré ningún gasto fijo con el nombre '{description}'. Usa /fijos o 'ver gastos fijos' para ver la lista completa."
+            
+        else:
+            logger.warning(f"⚠️ Función desconocida: {function_name}")
+            return "⚠️ No puedo procesar esa solicitud en este momento."
+    
+    except Exception as e:
+        logger.error(f"Error ejecutando función {function_name}: {e}")
+        return f"❌ Error ejecutando {function_name}: {str(e)}"
 
 
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
