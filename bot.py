@@ -19,9 +19,9 @@ from telegram.ext import (
     ContextTypes
 )
 
-# Google Generative AI (Gemini)
-import google.generativeai as genai
-from google.generativeai.types import content_types
+# Google Generative AI (Gemini) - NUEVA LIBRERÍA
+from google import genai
+from google.genai import types
 
 # Database functions
 from database import add_expense, get_recent_expenses
@@ -44,8 +44,8 @@ GEMINI_API_KEY: Final = os.getenv("GEMINI_API_KEY", "")
 if not TELEGRAM_TOKEN or not GEMINI_API_KEY:
     raise ValueError("❌ TELEGRAM_BOT_TOKEN y GEMINI_API_KEY deben estar configurados en .env")
 
-# Configurar Gemini AI
-genai.configure(api_key=GEMINI_API_KEY)
+# Configurar cliente de Gemini AI
+client = genai.Client(api_key=GEMINI_API_KEY)
 
 # System Instruction para Gemini (comportamiento del asistente)
 SYSTEM_INSTRUCTION = """
@@ -75,52 +75,45 @@ Usuario: "Muéstrame mis gastos"
 → Llamas get_recent_expenses()
 """
 
-# Definir las herramientas (Tools) para Gemini Function Calling
-tools = [
-    {
-        "function_declarations": [
-            {
-                "name": "add_expense",
-                "description": "Registra un nuevo gasto en la base de datos. Usa esta función cuando el usuario mencione que ha gastado dinero.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "amount": {
-                            "type": "number",
-                            "description": "Monto del gasto en pesos colombianos (COP). Convierte 'k' o 'mil' a números completos. Ejemplo: 20k = 20000"
-                        },
-                        "description": {
-                            "type": "string",
-                            "description": "Descripción breve del gasto (ej: 'uvas', 'taxi', 'almuerzo')"
-                        },
-                        "category": {
-                            "type": "string",
-                            "description": "Categoría del gasto. Opciones: comida, transporte, entretenimiento, servicios, salud, general",
-                            "enum": ["comida", "transporte", "entretenimiento", "servicios", "salud", "general"]
-                        }
-                    },
-                    "required": ["amount", "description", "category"]
-                }
-            },
-            {
-                "name": "get_recent_expenses",
-                "description": "Obtiene los últimos 5 gastos registrados. Usa esta función cuando el usuario quiera ver sus gastos recientes o un resumen.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {},
-                    "required": []
-                }
-            }
-        ]
-    }
-]
-
-# Crear modelo de Gemini con las herramientas
-model = genai.GenerativeModel(
-    model_name='gemini-1.5-flash',
-    tools=tools,
-    system_instruction=SYSTEM_INSTRUCTION
+# Definir las herramientas (Tools) para Gemini Function Calling - NUEVA SINTAXIS
+add_expense_tool = types.Tool(
+    function_declarations=[
+        types.FunctionDeclaration(
+            name="add_expense",
+            description="Registra un nuevo gasto en la base de datos. Usa esta función cuando el usuario mencione que ha gastado dinero.",
+            parameters=types.Schema(
+                type=types.Type.OBJECT,
+                properties={
+                    "amount": types.Schema(
+                        type=types.Type.NUMBER,
+                        description="Monto del gasto en pesos colombianos (COP). Convierte 'k' o 'mil' a números completos. Ejemplo: 20k = 20000"
+                    ),
+                    "description": types.Schema(
+                        type=types.Type.STRING,
+                        description="Descripción breve del gasto (ej: 'uvas', 'taxi', 'almuerzo')"
+                    ),
+                    "category": types.Schema(
+                        type=types.Type.STRING,
+                        description="Categoría del gasto",
+                        enum=["comida", "transporte", "entretenimiento", "servicios", "salud", "general"]
+                    )
+                },
+                required=["amount", "description", "category"]
+            )
+        ),
+        types.FunctionDeclaration(
+            name="get_recent_expenses",
+            description="Obtiene los últimos 5 gastos registrados. Usa esta función cuando el usuario quiera ver sus gastos recientes o un resumen.",
+            parameters=types.Schema(
+                type=types.Type.OBJECT,
+                properties={},
+                required=[]
+            )
+        )
+    ]
 )
+
+logger.info("✅ Herramientas de Gemini configuradas correctamente")
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -192,73 +185,62 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     logger.info(f"Usuario {user_id}: {user_message}")
     
     try:
-        # Iniciar chat con Gemini
-        chat = model.start_chat(enable_automatic_function_calling=False)
+        # Enviar mensaje del usuario a Gemini con la NUEVA API
+        # NOTA: Usar 'models/gemini-2.5-flash' que es el modelo disponible
+        response = client.models.generate_content(
+            model='models/gemini-2.5-flash',
+            contents=user_message,
+            config=types.GenerateContentConfig(
+                system_instruction=SYSTEM_INSTRUCTION,
+                tools=[add_expense_tool],
+                temperature=0.7
+            )
+        )
         
-        # Enviar mensaje del usuario a Gemini
-        response = chat.send_message(user_message)
+        # Verificar si hay function calls en la respuesta
+        if response.candidates and response.candidates[0].content.parts:
+            for part in response.candidates[0].content.parts:
+                # Si hay una llamada a función
+                if hasattr(part, 'function_call') and part.function_call:
+                    function_call = part.function_call
+                    function_name = function_call.name
+                    function_args = dict(function_call.args)
+                    
+                    logger.info(f"🤖 Gemini llama a función: {function_name} con args: {function_args}")
+                    
+                    # Ejecutar la función correspondiente
+                    if function_name == "add_expense":
+                        result = add_expense(
+                            amount=function_args.get("amount"),
+                            description=function_args.get("description"),
+                            category=function_args.get("category")
+                        )
+                        await update.message.reply_text(result["message"])
+                        
+                    elif function_name == "get_recent_expenses":
+                        expenses_text = get_recent_expenses()
+                        await update.message.reply_text(expenses_text, parse_mode='Markdown')
+                        
+                    else:
+                        logger.warning(f"⚠️ Función desconocida: {function_name}")
+                        await update.message.reply_text(
+                            "⚠️ No puedo procesar esa solicitud en este momento."
+                        )
+                
+                # Si es solo texto (respuesta normal sin función)
+                elif hasattr(part, 'text') and part.text:
+                    await update.message.reply_text(part.text, parse_mode='Markdown')
         
-        # Procesar la respuesta
-        # Verificar si Gemini quiere llamar a una función
-        if response.candidates[0].content.parts:
-            part = response.candidates[0].content.parts[0]
-            
-            # Si hay una llamada a función (function_call)
-            if hasattr(part, 'function_call') and part.function_call:
-                function_call = part.function_call
-                function_name = function_call.name
-                function_args = dict(function_call.args)
-                
-                logger.info(f"🤖 Gemini llama a función: {function_name} con args: {function_args}")
-                
-                # Ejecutar la función correspondiente
-                if function_name == "add_expense":
-                    # Llamar a la función add_expense de database.py
-                    result = add_expense(
-                        amount=function_args.get("amount"),
-                        description=function_args.get("description"),
-                        category=function_args.get("category")
-                    )
-                    
-                    # Enviar el resultado al usuario
-                    await update.message.reply_text(result["message"])
-                    
-                    # Enviar el resultado de vuelta a Gemini para que genere una respuesta natural
-                    function_response = content_types.to_function_response(
-                        name=function_name,
-                        response=result
-                    )
-                    response = chat.send_message(function_response)
-                    
-                    # Si Gemini genera texto adicional, enviarlo
-                    if response.text:
-                        await update.message.reply_text(response.text, parse_mode='Markdown')
-                
-                elif function_name == "get_recent_expenses":
-                    # Llamar a la función get_recent_expenses
-                    expenses_text = get_recent_expenses()
-                    
-                    # Enviar directamente al usuario
-                    await update.message.reply_text(expenses_text, parse_mode='Markdown')
-                    
-                else:
-                    logger.warning(f"⚠️ Función desconocida: {function_name}")
-                    await update.message.reply_text(
-                        "⚠️ No puedo procesar esa solicitud en este momento."
-                    )
-            
-            # Si es solo texto (respuesta normal sin función)
-            elif hasattr(part, 'text') and part.text:
-                await update.message.reply_text(response.text, parse_mode='Markdown')
-            
-            else:
-                # Respuesta vacía o inesperada
-                await update.message.reply_text(
-                    "🤔 No estoy seguro de cómo ayudarte con eso. ¿Puedes reformular tu pregunta?"
-                )
+        # Si no hay partes en la respuesta
+        else:
+            await update.message.reply_text(
+                "🤔 No estoy seguro de cómo ayudarte con eso. ¿Puedes reformular tu pregunta?"
+            )
         
     except Exception as e:
         logger.error(f"❌ Error procesando mensaje: {e}")
+        import traceback
+        traceback.print_exc()
         await update.message.reply_text(
             "❌ Hubo un error procesando tu mensaje. Por favor, intenta de nuevo."
         )
