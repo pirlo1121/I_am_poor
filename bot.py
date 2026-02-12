@@ -38,7 +38,9 @@ from database import (
     mark_payment_done,
     find_recurring_by_name,
     get_expenses_by_month,
-    compare_monthly_expenses
+    compare_monthly_expenses,
+    get_paid_payments,
+    get_all_monthly_bills
 )
 
 # Configurar logging
@@ -79,7 +81,8 @@ SYSTEM_INSTRUCTION = """
 Eres un contador personal amigable y dinámico llamado "Asistente Financiero".
 
 🎯 PERSONALIDAD:
-- Habla de manera natural, conversacional y amigable
+- Habla de manera natural, conversacional y sarcastico
+- tienes un humor negro e inteligente
 - Usa emojis para hacer las respuestas más dinámicas  
 - Evita respuestas robóticas o muy técnicas
 - Sé entusiasta y positivo cuando registres gastos exitosamente
@@ -95,7 +98,7 @@ EJEMPLOS DE CÓMO RESPONDER:
 "✅ Gasto registrado: 20000 COP - café - categoría: comida"
 
 ✅ BIEN (natural):
-"¡Listo! 😊 Registré tu café de $20,000 en comida. Espero que haya estado delicioso ☕"
+"¡Listo! 😊 Registré tu café de $20,000 en comida ☕"
 
 ❌ MAL (frío):
 "📊 Gastos del día:
@@ -106,6 +109,26 @@ Total: 35,000 COP"
 ✅ BIEN (cálido):
 "Hoy has gastado $35,000 💰
 Veo que compraste café ($20k) y tomaste un Uber ($15k). ¡Un día bastante normal! 😊"
+
+❌ MAL (robótico - mensualidades):
+"Mensualidades pagadas:
+- Internet: $60,000
+- Luz: $45,000"
+
+✅ BIEN (natural - mensualidades):
+"Este mes ya pagaste 2 facturas 🎉:
+Internet por $60k y Luz por $45k. ¡Vas bien! 💪"
+
+❌ MAL (frío - todas las mensualidades):
+"Facturas del mes:
+PAGADAS: Internet, Luz
+PENDIENTES: Arriendo, Agua"
+
+✅ BIEN (cálido - todas las mensualidades):
+"Tienes 4 mensualidades este mes 📋
+✅ Pagadas: Internet ($60k) y Luz ($45k)
+⏰ Pendientes: Arriendo ($800k) y Agua ($35k)
+Total pendiente: $835k"
 
 Tu trabajo es ayudar al usuario a:
 1. Registrar gastos normales con DETECCIÓN INTELIGENTE de tiendas
@@ -150,6 +173,11 @@ CAPACIDADES PRINCIPALES:
 
 **Consultar:**
 - "Qué facturas tengo?" → get_pending_payments()
+- "Qué facturas me faltan?" → get_pending_payments()
+- "Muéstrame las mensualidades pagadas" → get_paid_payments()
+- "Qué facturas he pagado este mes?" → get_paid_payments()
+- "Todas mis mensualidades" → get_all_monthly_bills()
+- "Ver todas las facturas" → get_all_monthly_bills()
 - "Ver gastos fijos" → get_recurring_expenses()
 
 **✅ MARCAR COMO PAGADO (LENGUAJE NATURAL):**
@@ -301,6 +329,26 @@ all_tools = types.Tool(
         types.FunctionDeclaration(
             name="get_pending_payments",
             description="Obtiene facturas pendientes de pago del mes actual. Usa cuando pregunten qué facturas faltan por pagar.",
+            parameters=types.Schema(
+                type=types.Type.OBJECT,
+                properties={},
+                required=[]
+            )
+        ),
+        
+        types.FunctionDeclaration(
+            name="get_paid_payments",
+            description="Obtiene las mensualidades/facturas ya pagadas este mes. Usa cuando pregunten por facturas pagadas o mensualidades que ya se pagaron.",
+            parameters=types.Schema(
+                type=types.Type.OBJECT,
+                properties={},
+                required=[]
+            )
+        ),
+        
+        types.FunctionDeclaration(
+            name="get_all_monthly_bills",
+            description="Obtiene todas las mensualidades del mes (pagadas y pendientes). Usa cuando pregunten por todas las facturas o ver estado completo de mensualidades.",
             parameters=types.Schema(
                 type=types.Type.OBJECT,
                 properties={},
@@ -885,6 +933,12 @@ async def _execute_function(function_name: str, function_args: dict, update: Upd
         
         elif function_name == "get_pending_payments":
             return get_pending_payments()
+        
+        elif function_name == "get_paid_payments":
+            return get_paid_payments()
+        
+        elif function_name == "get_all_monthly_bills":
+            return get_all_monthly_bills()
         
         elif function_name == "mark_bill_paid":
             recurring_id = function_args.get("recurring_expense_id")

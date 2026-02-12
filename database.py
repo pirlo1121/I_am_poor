@@ -529,6 +529,177 @@ def mark_payment_done(recurring_id: int) -> Dict:
         }
 
 
+def get_paid_payments() -> str:
+    """Obtiene las facturas/mensualidades ya pagadas del mes actual."""
+    try:
+        client = init_supabase()
+        
+        now = datetime.now()
+        current_month = now.month
+        current_year = now.year
+        
+        # Obtener pagos realizados este mes
+        payments_response = client.table("pagos_realizados") \
+            .select("*") \
+            .eq("month", current_month) \
+            .eq("year", current_year) \
+            .execute()
+        
+        paid_payments = payments_response.data
+        
+        if not paid_payments:
+            return f"📭 No has pagado ninguna factura en {now.strftime('%B %Y')} aún"
+        
+        # Obtener detalles de los gastos fijos
+        paid_with_details = []
+        for payment in paid_payments:
+            recurring_id = payment.get("gasto_fijo_id")
+            
+            # Buscar el gasto fijo correspondiente
+            recurring_response = client.table("gastos_fijos") \
+                .select("*") \
+                .eq("id", recurring_id) \
+                .execute()
+            
+            if recurring_response.data:
+                recurring = recurring_response.data[0]
+                paid_with_details.append({
+                    "description": recurring.get("description", ""),
+                    "amount": payment.get("amount", 0),
+                    "category": recurring.get("category", ""),
+                    "day_of_month": recurring.get("day_of_month", 0)
+                })
+        
+        if not paid_with_details:
+            return f"📭 No se encontraron detalles de pagos para {now.strftime('%B %Y')}"
+        
+        result = f"✅ **Facturas Pagadas ({now.strftime('%B %Y')}):**\n\n"
+        
+        total_paid = 0
+        for idx, payment in enumerate(paid_with_details, 1):
+            description = payment.get("description", "")
+            amount = payment.get("amount", 0)
+            category = payment.get("category", "")
+            day = payment.get("day_of_month", 0)
+            
+            result += f"{idx}. ✅ ${amount:,.0f} - {description}\n"
+            result += f"   📅 Día {day} de cada mes ({category.title()})\n\n"
+            total_paid += amount
+        
+        result += f"💵 **Total Pagado**: ${total_paid:,.0f} COP"
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"❌ Error: {e}")
+        return f"❌ Error al consultar facturas pagadas: {str(e)}"
+
+
+def get_all_monthly_bills() -> str:
+    """Obtiene todas las mensualidades del mes actual (pagadas y pendientes)."""
+    try:
+        client = init_supabase()
+        
+        now = datetime.now()
+        current_month = now.month
+        current_year = now.year
+        current_day = now.day
+        
+        # Obtener todos los gastos fijos activos
+        recurring_response = client.table("gastos_fijos") \
+            .select("*") \
+            .eq("active", True) \
+            .order("day_of_month") \
+            .execute()
+        
+        recurring_expenses = recurring_response.data
+        
+        if not recurring_expenses:
+            return "📭 No tienes gastos fijos configurados"
+        
+        # Obtener pagos ya realizados este mes
+        payments_response = client.table("pagos_realizados") \
+            .select("*") \
+            .eq("month", current_month) \
+            .eq("year", current_year) \
+            .execute()
+        
+        paid_ids = {p["gasto_fijo_id"] for p in payments_response.data}
+        
+        # Separar en pagadas y pendientes
+        paid_bills = []
+        pending_bills = []
+        
+        for rec in recurring_expenses:
+            rec_id = rec.get("id")
+            description = rec.get("description", "")
+            amount = rec.get("amount", 0)
+            day = rec.get("day_of_month", 0)
+            category = rec.get("category", "")
+            
+            bill_info = {
+                "description": description,
+                "amount": amount,
+                "day": day,
+                "category": category
+            }
+            
+            if rec_id in paid_ids:
+                paid_bills.append(bill_info)
+            else:
+                days_until = day - current_day
+                bill_info["days_until"] = days_until
+                pending_bills.append(bill_info)
+        
+        # Construir respuesta
+        result = f"📋 **Todas las Mensualidades ({now.strftime('%B %Y')}):**\n\n"
+        
+        # Mostrar pagadas
+        if paid_bills:
+            result += "✅ **PAGADAS:**\n"
+            total_paid = 0
+            for idx, bill in enumerate(paid_bills, 1):
+                result += f"{idx}. 💰 ${bill['amount']:,.0f} - {bill['description']}\n"
+                result += f"   📅 Día {bill['day']} ({bill['category'].title()})\n"
+                total_paid += bill['amount']
+            result += f"   **Subtotal Pagado**: ${total_paid:,.0f}\n\n"
+        else:
+            result += "✅ **PAGADAS:** Ninguna aún\n\n"
+        
+        # Mostrar pendientes
+        if pending_bills:
+            result += "⏰ **PENDIENTES:**\n"
+            total_pending = 0
+            for idx, bill in enumerate(pending_bills, 1):
+                days_until = bill.get("days_until", 0)
+                
+                if days_until < 0:
+                    status = f"⚠️ Vencida"
+                elif days_until == 0:
+                    status = f"🔴 Vence HOY"
+                elif days_until == 1:
+                    status = f"🟡 Mañana"
+                else:
+                    status = f"⏰ Faltan {days_until} días"
+                
+                result += f"{idx}. 💰 ${bill['amount']:,.0f} - {bill['description']}\n"
+                result += f"   📅 Día {bill['day']} - {status} ({bill['category'].title()})\n"
+                total_pending += bill['amount']
+            result += f"   **Subtotal Pendiente**: ${total_pending:,.0f}\n\n"
+        else:
+            result += "⏰ **PENDIENTES:** ¡Todas pagadas! 🎉\n\n"
+        
+        # Total general
+        total_all = sum(b['amount'] for b in paid_bills) + sum(b['amount'] for b in pending_bills)
+        result += f"💵 **Total Mensual**: ${total_all:,.0f} COP"
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"❌ Error: {e}")
+        return f"❌ Error al consultar mensualidades: {str(e)}"
+
+
 def get_upcoming_payments(days_ahead: int = 3) -> List[Dict]:
     """
     Obtiene pagos próximos a vencer (para el sistema de notificaciones).
