@@ -19,7 +19,8 @@ from database import (
     get_expenses_by_month,
     compare_monthly_expenses,
     get_paid_payments,
-    get_all_monthly_bills
+    get_all_monthly_bills,
+    get_financial_summary  # Nueva función optimizada
 )
 
 # Definir las herramientas (Tools) para Gemini Function Calling
@@ -246,6 +247,22 @@ all_tools = types.Tool(
                 },
                 required=["recurring_expense_id"]
             )
+        ),
+        
+        # === FUNCIÓN OPTIMIZADA - RESUMEN RÁPIDO ===
+        types.FunctionDeclaration(
+            name="get_financial_summary",
+            description="🚀 FUNCIÓN OPTIMIZADA - Usa ESTA en lugar de múltiples llamadas. Obtiene TODO el resumen financiero del mes en UNA SOLA operación super rápida: gastos variables + mensualidades pagadas + mensualidades pendientes + balance vs presupuesto. MUCHO MÁS RÁPIDO que llamar funciones separadas.",
+            parameters=types.Schema(
+                type=types.Type.OBJECT,
+                properties={
+                    "budget": types.Schema(
+                        type=types.Type.NUMBER,
+                        description="Presupuesto mensual en COP. Si el usuario menciona un presupuesto o balance, úsalo aquí. Ejemplo: 'tengo 3 millones' → budget=3000000"
+                    )
+                },
+                required=[]
+            )
         )
     ]
 )
@@ -336,6 +353,11 @@ async def execute_function(function_name: str, function_args: dict) -> str:
                 return result["message"]
             else:
                 return f"❌ No encontré ningún gasto fijo con el nombre '{description}'. Usa /fijos o 'ver gastos fijos' para ver la lista completa."
+        
+        # === FUNCIÓN OPTIMIZADA ===
+        elif function_name == "get_financial_summary":
+            budget = function_args.get("budget")
+            return get_financial_summary(budget)
             
         else:
             logger.warning(f"⚠️ Función desconocida: {function_name}")

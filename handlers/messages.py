@@ -8,6 +8,7 @@ from telegram.ext import ContextTypes
 from google.genai import types
 from config import AI_PROVIDER, logger
 from ai.providers import generate_ai_response
+from ai.prompts import SYSTEM_INSTRUCTION
 from ai.tools import execute_function
 from core.session_manager import get_or_create_session, clear_session, MAX_HISTORY_MESSAGES, user_sessions
 
@@ -91,12 +92,28 @@ async def _process_chatgpt_response(response, user_message: str, user_id: int, u
         
         # Hacer segunda llamada a ChatGPT para que procese los resultados y genere respuesta natural
         logger.info("🔄 Enviando resultados a ChatGPT para generar respuesta natural")
-        second_response = generate_ai_response("", user_sessions[user_id])
+        
+        # Crear mensajes solo con historial + system instruction (sin mensaje vacío del usuario)
+        from config import openai
+        messages_with_results = [{"role": "system", "content": SYSTEM_INSTRUCTION}]
+        messages_with_results.extend(user_sessions[user_id])
+        
+        second_response = openai.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=messages_with_results
+        )
         final_message = second_response.choices[0].message
         
-        if final_message.content:
+        if final_message.content and final_message.content.strip():
             await update.message.reply_text(final_message.content, parse_mode='Markdown')
             user_sessions[user_id].append({"role": "assistant", "content": final_message.content})
+        else:
+            # Fallback: Si la IA no generó respuesta de texto, enviar confirmación natural
+            logger.warning("⚠️ ChatGPT no retornó contenido de texto después de function call")
+            fallback_msg = "Listo ✅"
+            await update.message.reply_text(fallback_msg)
+            user_sessions[user_id].append({"role": "assistant", "content": fallback_msg})
+    
     
     elif message.content:
         # Respuesta de texto normal
@@ -146,21 +163,32 @@ async def _process_gemini_response(response, chat_session, update: Update):
             logger.info("🔄 Enviando resultados a Gemini para generar respuesta natural")
             
             # Construir mensaje con los resultados de las funciones
+            has_sent_response = False
             for fc in function_calls_found:
-                # Enviar resultado de función de vuelta al chat
-                function_response_part = types.Part.from_function_response(
-                    name=fc["name"],
-                    response={"result": fc["result"]}
-                )
-                
-                # Obtener respuesta final de Gemini procesando el resultado
-                final_response = chat_session.send_message(function_response_part)
-                
-                # Enviar la respuesta natural al usuario
-                if final_response.candidates and final_response.candidates[0].content.parts:
-                    for final_part in final_response.candidates[0].content.parts:
-                        if hasattr(final_part, 'text') and final_part.text:
-                            await update.message.reply_text(final_part.text, parse_mode='Markdown')
+                try:
+                    # Enviar resultado de función de vuelta al chat
+                    function_response_part = types.Part.from_function_response(
+                        name=fc["name"],
+                        response={"result": fc["result"]}
+                    )
+                    
+                    # Obtener respuesta final de Gemini procesando el resultado
+                    final_response = chat_session.send_message(function_response_part)
+                    
+                    # Enviar la respuesta natural al usuario
+                    if final_response.candidates and final_response.candidates[0].content.parts:
+                        for final_part in final_response.candidates[0].content.parts:
+                            if hasattr(final_part, 'text') and final_part.text and final_part.text.strip():
+                                await update.message.reply_text(final_part.text, parse_mode='Markdown')
+                                has_sent_response = True
+                except Exception as func_error:
+                    logger.error(f"❌ Error procesando resultado de función {fc['name']}: {func_error}")
+                    # Continuar con la siguiente función
+            
+            # Si no se envió ninguna respuesta, enviar confirmación natural
+            if not has_sent_response:
+                logger.warning("⚠️ Gemini no retornó contenido de texto después de function calls")
+                await update.message.reply_text("Listo ✅")
         
         # Si solo hay texto (sin function calls)
         elif text_responses:
@@ -203,8 +231,7 @@ async def _handle_error(e: Exception, user_id: int, update: Update):
         get_or_create_session(user_id)
         
         await update.message.reply_text(
-            "⚠️ Hubo un error crítico con la API. He reiniciado tu sesión de chat.\n"
-            "Tu historial se ha borrado, pero puedes continuar desde aquí."
+            "⚠️ borrando historial de conversacion"
         )
     else:
         # Error menor: Mantener sesión pero informar al usuario

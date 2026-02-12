@@ -12,7 +12,8 @@ user_sessions = {}
 
 # Límite de mensajes en el historial (para evitar que crezca infinitamente)
 # Se mantienen los últimos N mensajes para tener contexto útil sin sobrecargar la API
-MAX_HISTORY_MESSAGES = 20  # 10 intercambios (usuario + asistente)
+MAX_HISTORY_MESSAGES = 40  # 20 intercambios (usuario + asistente) - mínimo 15 requerido
+
 
 
 def get_or_create_session(user_id: int):

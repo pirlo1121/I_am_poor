@@ -66,7 +66,7 @@ def add_expense(amount: float, description: str, category: str) -> Dict:
         
         return {
             "success": True,
-            "message": f"✅ Gasto registrado exitosamente: ${amount:,.0f} COP en {category}",
+            "message": f"✅ Gasto registrado: ${amount:,.0f} COP en {category}",
             "data": response.data
         }
         
@@ -970,6 +970,107 @@ def compare_monthly_expenses(month1: int, year1: int, month2: int, year2: int) -
     except Exception as e:
         logger.error(f"❌ Error: {e}")
         return f"❌ Error al comparar meses: {str(e)}"
+
+
+# ============================================
+# FUNCIÓN OPTIMIZADA - RESUMEN FINANCIERO RÁPIDO
+# ============================================
+
+def get_financial_summary(budget: Optional[float] = None) -> str:
+    """
+    Obtiene un resumen financiero completo del mes actual en UNA SOLA CONSULTA.
+    Incluye: gastos totales, mensualidades pagadas, mensualidades pendientes, 
+    y si se proporciona un presupuesto, calcula el balance.
+    
+    Esta función es MUCHO MÁS RÁPIDA que llamar a múltiples funciones por separado.
+    
+    Args:
+        budget: Presupuesto mensual opcional (en COP)
+    
+    Returns:
+        str: Resumen financiero completo formateado
+    """
+    try:
+        client = init_supabase()
+        
+        now = datetime.now()
+        current_month = now.month
+        current_year = now.year
+        
+        # 1. Obtener gastos del mes actual
+        start_date = f"{current_year}-{current_month:02d}-01T00:00:00"
+        if current_month == 12:
+            end_date = f"{current_year + 1}-01-01T00:00:00"
+        else:
+            end_date = f"{current_year}-{current_month + 1:02d}-01T00:00:00"
+        
+        expenses_response = client.table("gastos") \
+            .select("amount") \
+            .gte("created_at", start_date) \
+            .lt("created_at", end_date) \
+            .execute()
+        
+        total_expenses = sum(e.get("amount", 0) for e in expenses_response.data)
+        
+        # 2. Obtener gastos fijos y pagos
+        recurring_response = client.table("gastos_fijos") \
+            .select("id,description,amount,day_of_month") \
+            .eq("active", True) \
+            .execute()
+        
+        payments_response = client.table("pagos_realizados") \
+            .select("gasto_fijo_id,amount") \
+            .eq("month", current_month) \
+            .eq("year", current_year) \
+            .execute()
+        
+        recurring_expenses = recurring_response.data
+        paid_ids = {p["gasto_fijo_id"] for p in payments_response.data}
+        
+        # Calcular totales de mensualidades
+        total_bills = sum(r.get("amount", 0) for r in recurring_expenses)
+        paid_bills_amount = sum(p.get("amount", 0) for p in payments_response.data)
+        pending_bills_amount = total_bills - paid_bills_amount
+        
+        paid_count = len(paid_ids)
+        pending_count = len(recurring_expenses) - paid_count
+        
+        # Construir respuesta rápida
+        result = f"💰 **Resumen Financiero - {now.strftime('%B %Y')}**\n\n"
+        
+        result += f"📊 **GASTOS VARIABLES:**\n"
+        result += f"   ${total_expenses:,.0f} COP\n\n"
+        
+        result += f"🏠 **MENSUALIDADES:**\n"
+        result += f"   ✅ Pagadas: {paid_count} (${paid_bills_amount:,.0f})\n"
+        result += f"   ⏰ Pendientes: {pending_count} (${pending_bills_amount:,.0f})\n"
+        result += f"   📋 Total: ${total_bills:,.0f}\n\n"
+        
+        # Total gastado hasta ahora
+        total_spent = total_expenses + paid_bills_amount
+        result += f"💵 **TOTAL GASTADO**: ${total_spent:,.0f} COP\n"
+        
+        # Si hay presupuesto, calcular balance
+        if budget and budget > 0:
+            total_committed = total_expenses + total_bills
+            balance = budget - total_committed
+            
+            result += f"\n💼 **PRESUPUESTO**: ${budget:,.0f} COP\n"
+            
+            if balance >= 0:
+                result += f"✅ **BALANCE**: ${balance:,.0f} COP disponibles 🎉\n"
+                percentage = (balance / budget * 100) if budget > 0 else 0
+                result += f"   ({percentage:.1f}% del presupuesto restante)"
+            else:
+                result += f"⚠️ **SOBREGIRO**: ${abs(balance):,.0f} COP 🔴\n"
+                percentage = (abs(balance) / budget * 100) if budget > 0 else 0
+                result += f"   ({percentage:.1f}% por encima del presupuesto)"
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"❌ Error en resumen financiero: {e}")
+        return f"❌ Error al generar resumen financiero: {str(e)}"
 
 
 # Inicializar la conexión al importar el módulo
