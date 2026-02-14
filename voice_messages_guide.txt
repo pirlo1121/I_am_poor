@@ -1,0 +1,131 @@
+=================================================================
+  🎤 NUEVA FUNCIONALIDAD: MENSAJES DE VOZ
+=================================================================
+
+¡Ahora puedes hablar con el bot! 
+
+En lugar de escribir tus mensajes, simplemente graba un audio de voz
+y el bot lo entenderá y ejecutará las acciones correspondientes.
+
+=================================================================
+
+✨ ¿CÓMO FUNCIONA?
+══════════════════
+
+1. Presiona el botón 🎤 en Telegram
+2. Graba tu mensaje (ej: "Gasté 50 mil en almuerzo")
+3. Envía el audio
+4. El bot responde: "🎤 Escuchando tu audio..."
+5. ¡Listo! El bot procesa y ejecuta la acción
+
+=================================================================
+
+💬 EJEMPLOS DE MENSAJES DE VOZ
+═══════════════════════════════
+
+Puedes decir lo mismo que escribirías:
+
+🎤 "Gasté veinte mil en Uber"
+   → Registra gasto de $20,000 en transporte
+
+🎤 "¿Cuánto gasté esta semana?"
+   → Muestra resumen de gastos de 7 días
+
+🎤 "Quiero ahorrar dos millones para vacaciones en seis meses"
+   → Crea meta de ahorro con sugerencias
+
+🎤 "Dame insights de mis finanzas"
+   → Genera análisis completo
+
+🎤 "Arriendo pagado"
+   → Marca factura de arriendo como pagada
+
+=================================================================
+
+🔧 TECNOLOGÍA
+═════════════
+
+• OpenAI Whisper API - Transcripción de voz a texto
+• Precisión muy alta en español
+• Soporta formatos: .ogg, .mp3, .wav
+• Archivos temporales se limpian automáticamente
+
+=================================================================
+
+💰 COSTO
+════════
+
+OpenAI Whisper: $0.006 por minuto de audio
+
+Ejemplos:
+• 1 audio de 10 segundos = ~$0.001 USD
+• 10 audios al día = ~$0.30 USD/mes
+• Muy económico para la conveniencia que aporta
+
+=================================================================
+
+✅ VENTAJAS
+═══════════
+
+✓ Más rápido que escribir
+✓ Manos libres
+✓ Natural e intuitivo
+✓ Ideal cuando estás ocupado
+✓ Accesible para todos
+
+=================================================================
+
+⚙️ CONFIGURACIÓN
+═════════════════
+
+NO REQUIERE CONFIGURACIÓN ADICIONAL
+
+Ya usas OpenAI para ChatGPT, así que Whisper usa la misma API key.
+¡Solo reinicia el bot y listo!
+
+=================================================================
+
+🚀 ACTIVAR LA FUNCIONALIDAD
+════════════════════════════
+
+1. Reiniciar el bot:
+   python bot.py
+
+2. En Telegram, presiona el botón de micrófono 🎤
+
+3. Graba tu mensaje
+
+4. ¡Listo!
+
+=================================================================
+
+📝 NOTAS TÉCNICAS
+═════════════════
+
+• Telegram envía audios en formato .ogg
+• Se descargan temporalmente para procesar
+• Whisper transcribe a texto en español
+• El texto se procesa igual que un mensaje escrito
+• El historial de conversación se mantiene
+
+=================================================================
+
+🎯 USO RECOMENDADO
+═══════════════════
+
+✅ IDEAL PARA:
+• Registrar gastos rápidos mientras caminas
+• Consultar información sin detenerte
+• Crear metas cuando tienes las manos ocupadas
+• Mayor comodidad en general
+
+⚠️ MEJOR ESCRIBIR:
+• Mensajes muy largos o complejos
+• Si necesitas editar antes de enviar
+• En ambientes muy ruidosos
+
+=================================================================
+
+¡DISFRUTA DE TU NUEVO ASISTENTE POR VOZ! 🎉
+
+=================================================================

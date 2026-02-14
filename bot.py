@@ -20,8 +20,10 @@ from handlers import (
     resumen_command,
     facturas_command,
     error_handler,
-    handle_message
+    handle_message,
+    handle_voice_message
 )
+
 
 
 def main() -> None:
@@ -40,8 +42,12 @@ def main() -> None:
     application.add_handler(CommandHandler("resumen", resumen_command))
     application.add_handler(CommandHandler("facturas", facturas_command))
     
+    
     # Handler para mensajes de texto (mensajes normales del usuario)
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    
+    # Handler para mensajes de voz
+    application.add_handler(MessageHandler(filters.VOICE, handle_voice_message))
     
     # Error handler
     application.add_error_handler(error_handler)

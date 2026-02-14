@@ -7,7 +7,7 @@ from .commands import (
     facturas_command,
     error_handler
 )
-from .messages import handle_message
+from .messages import handle_message, handle_voice_message
 
 __all__ = [
     'start_command',
@@ -16,5 +16,6 @@ __all__ = [
     'resumen_command',
     'facturas_command',
     'error_handler',
-    'handle_message'
+    'handle_message',
+    'handle_voice_message'
 ]

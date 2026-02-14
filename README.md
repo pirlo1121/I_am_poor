@@ -1,32 +1,51 @@
 # 💰 Asistente Financiero Personal - Telegram Bot
 
-Bot de Telegram con IA que funciona como tu asistente financiero personal. Usa **Gemini o ChatGPT** para interpretar lenguaje natural y gestionar gastos en **Supabase**.
-
-## 🚀 Características
-
-- ✅ **Registro de gastos en lenguaje natural**: "Gasté 20k en uvas"
-- ✅ **Consultas inteligentes**: "¿Cuánto gasté esta semana?"
-- ✅ **Gastos fijos y mensualidades**: Trackeo automático de facturas
-- ✅ **IA conversacional** con personalidad sarcástica
-- ✅ **Soporte dual**: Gemini o ChatGPT
-- ✅ **Base de datos**: PostgreSQL vía Supabase
+> **Bot inteligente de Telegram** que te ayuda a gestionar tus finanzas personales usando inteligencia artificial. Registra gastos, trackea mensualidades y consulta tu balance conversando naturalmente.
 
 ---
 
-## 📋 Requisitos
+## ✨ Características Principales
 
-1. **Python 3.10+**
-2. **Bot de Telegram** (crear en [@BotFather](https://t.me/botfather))
-3. **API Key** de Gemini ([obtener aquí](https://makersuite.google.com/app/apikey)) o ChatGPT ([obtener aquí](https://platform.openai.com/account/api-keys))
-4. **Cuenta de Supabase** ([crear aquí](https://supabase.com))
+### 🗣️ **Lenguaje Natural**
+Interactúa con el bot como si hablaras con un amigo:
+- "Gasté 20k en uvas" → Se registra automáticamente
+- "¿Cuánto gasté esta semana?" → Obtén respuestas instantáneas
+- "Arriendo pagado" → Marca facturas como pagadas
+
+### 📊 **Gestión Completa de Finanzas**
+- ✅ **Gastos variables**: Registra compras diarias
+- ✅ **Gastos fijos**: Trackea mensualidades (arriendo, servicios, etc.)
+- ✅ **Consultas inteligentes**: Resúmenes por día, semana o mes
+- ✅ **Análisis de presupuesto**: Calcula saldos disponibles
+- ✅ **Categorización automática**: Organiza gastos por tipo
+
+### 🤖 **Tecnología**
+- **IA Dual**: Funciona con Gemini o ChatGPT
+- **Base de datos**: PostgreSQL hospedado en Supabase
+- **Personalidad**: Bot con tono sarcástico que mantiene conversaciones contextuales
 
 ---
 
-## 🛠️ Instalación Rápida
+## 📋 Requisitos Previos
 
-### 1. Crear las tablas en Supabase
+Antes de comenzar, asegúrate de tener:
 
-En tu proyecto de Supabase, ve a **SQL Editor** y ejecuta:
+| Requisito | Descripción | Enlace |
+|-----------|-------------|--------|
+| **Python 3.10+** | Lenguaje de programación | [Descargar](https://www.python.org/downloads/) |
+| **Bot de Telegram** | Token del bot | [Crear con @BotFather](https://t.me/botfather) |
+| **API Key de IA** | Gemini o ChatGPT | [Gemini](https://makersuite.google.com/app/apikey) \| [ChatGPT](https://platform.openai.com/account/api-keys) |
+| **Cuenta Supabase** | Base de datos PostgreSQL | [Crear cuenta](https://supabase.com) |
+
+---
+
+## � Instalación Paso a Paso
+
+### **Paso 1: Configurar Base de Datos**
+
+1. Ingresa a tu proyecto en [Supabase](https://supabase.com)
+2. Navega a **SQL Editor**
+3. Copia y ejecuta el siguiente script:
 
 ```sql
 -- Tabla de gastos variables
@@ -49,7 +68,7 @@ CREATE TABLE gastos_fijos (
   active BOOLEAN DEFAULT TRUE
 );
 
--- Tabla de pagos realizados (tracking de mensualidades)
+-- Tabla de seguimiento de pagos
 CREATE TABLE pagos_realizados (
   id BIGSERIAL PRIMARY KEY,
   created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -60,47 +79,63 @@ CREATE TABLE pagos_realizados (
 );
 ```
 
-### 2. Configurar el proyecto
+### **Paso 2: Clonar e Instalar Dependencias**
 
 ```bash
-# Clonar el repositorio o entrar al directorio
+# Navega al directorio del proyecto
 cd I_am_poor
 
-# Crear entorno virtual
+# Crea un entorno virtual
 python -m venv venv
-source venv/bin/activate  # Linux/Mac
-# venv\Scripts\activate   # Windows
 
-# Instalar dependencias
+# Activa el entorno virtual
+source venv/bin/activate  # En Linux/Mac
+# venv\Scripts\activate   # En Windows
+
+# Instala las dependencias
 pip install -r requirements.txt
+```
 
-# Configurar variables de entorno
+### **Paso 3: Configurar Variables de Entorno**
+
+1. Crea el archivo `.env` copiando el ejemplo:
+```bash
 cp .env.example .env
 ```
 
-### 3. Editar `.env` con tus credenciales
+2. Edita `.env` con tus credenciales:
 
 ```env
-# Telegram Bot
-TELEGRAM_BOT_TOKEN=tu_token_de_telegram
+# ========================================
+# TELEGRAM BOT
+# ========================================
+TELEGRAM_BOT_TOKEN=1234567890:ABCdefGHIjklMNOpqrsTUVwxyz
 
-# AI Provider (elige uno)
-AI_PROVIDER=gemini  # o "chatgpt"
-GEMINI_API_KEY=tu_api_key_de_gemini  # Si usas Gemini
-CHATGPT_API_KEY=tu_api_key_de_chatgpt  # Si usas ChatGPT
+# ========================================
+# PROVEEDOR DE IA (elige uno)
+# ========================================
+AI_PROVIDER=gemini  # Opciones: "gemini" o "chatgpt"
 
-# Supabase
+# Si usas Gemini:
+GEMINI_API_KEY=AIzaSyXXXXXXXXXXXXXXXXXXX
+
+# Si usas ChatGPT:
+CHATGPT_API_KEY=sk-XXXXXXXXXXXXXXXXXXXXXXXX
+
+# ========================================
+# SUPABASE
+# ========================================
 SUPABASE_URL=https://xxxxx.supabase.co
-SUPABASE_KEY=tu_supabase_anon_key
+SUPABASE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
 ```
 
-### 4. Ejecutar el bot
+### **Paso 4: Ejecutar el Bot**
 
 ```bash
 python bot.py
 ```
 
-Deberías ver:
+✅ **Deberías ver este mensaje:**
 ```
 INFO - ✅ Conexión a Supabase establecida exitosamente
 INFO - 🚀 Bot iniciado correctamente. Esperando mensajes...
@@ -108,122 +143,272 @@ INFO - 🚀 Bot iniciado correctamente. Esperando mensajes...
 
 ---
 
-## 💬 Cómo Usar
+## 💬 Guía de Uso
 
-### Comandos
+### **Comandos Disponibles**
 
-- `/start` - Iniciar el bot
-- `/help` - Ver ayuda
-- `/gastos` - Últimos 5 gastos
-- `/resumen` - Resumen del mes
-- `/facturas` - Ver mensualidades
+| Comando | Descripción |
+|---------|-------------|
+| `/start` | Inicia el bot y muestra bienvenida |
+| `/help` | Muestra ayuda y ejemplos de uso |
+| `/gastos` | Lista los últimos 5 gastos registrados |
+| `/resumen` | Resumen financiero del mes actual |
+| `/facturas` | Muestra todas las mensualidades y su estado |
 
-### Ejemplos
+### **Ejemplos de Uso**
 
-**Registrar gastos:**
+#### 📝 **Registrar Gastos**
 ```
-Tú: Gasté 20k en uvas
-Bot: 💰 Listo, registré $20,000 en comida
+💬 Tú: Gasté 20k en uvas
+🤖 Bot: 💰 Listo, registré $20,000 en comida
 
-Tú: Pagué 50 mil de Uber
-Bot: ✅ Anotado: $50,000 en transporte
-```
+💬 Tú: Pagué 50 mil de Uber
+🤖 Bot: ✅ Anotado: $50,000 en transporte
 
-**Gastos fijos:**
-```
-Tú: Registra el arriendo de 800 mil cada 5 de mes
-Bot: ✅ Gasto fijo registrado: Arriendo - $800,000 cada día 5
-
-Tú: Arriendo pagado
-Bot: ✅ Marcado como pagado: Arriendo - $800,000
+💬 Tú: Compré pizza por 35000
+🤖 Bot: 🍕 Guardado: $35,000 en comida
 ```
 
-**Consultas:**
+#### 🔁 **Configurar Gastos Fijos**
 ```
-Tú: ¿Cuánto gasté hoy?
-Bot: 📊 Hoy gastaste $70,000 en 3 gastos
+💬 Tú: Registra el arriendo de 800 mil cada 5 de mes
+🤖 Bot: ✅ Gasto fijo registrado: Arriendo - $800,000 cada día 5
 
-Tú: ¿Qué facturas tengo pendientes?
-Bot: 📋 Facturas Pendientes:
-     1. Internet - $80,000 (Vence: 10 de febrero)
-     2. Luz - $120,000 (Vence HOY)
+💬 Tú: Netflix son 42 mil mensuales cada 15
+🤖 Bot: ✅ Mensualidad creada: Netflix - $42,000 el día 15
+
+💬 Tú: Arriendo pagado
+🤖 Bot: ✅ Marcado como pagado: Arriendo - $800,000 (Febrero 2026)
 ```
 
-**Análisis con presupuesto:**
+#### 📊 **Consultas Inteligentes**
 ```
-Tú: Suma gastos y mensualidades, réstalos de 3 millones
-Bot: 💰 Resumen Financiero:
-     Gastos: $245,000
-     Mensualidades Pagadas: $1,472,000
-     Total Gastado: $1,717,000
-     
-     Balance: $1,283,000 disponibles ✅ (42.8% restante)
+💬 Tú: ¿Cuánto gasté hoy?
+🤖 Bot: 📊 Hoy gastaste $70,000 en 3 gastos:
+       • Comida: $40,000
+       • Transporte: $20,000
+       • General: $10,000
+
+💬 Tú: ¿Qué facturas tengo pendientes?
+🤖 Bot: 📋 Facturas Pendientes (Febrero 2026):
+       1. Internet - $80,000 (Vence: 10 de febrero)
+       2. Luz - $120,000 (⚠️ Vence HOY)
+
+💬 Tú: Muéstrame el total de la semana
+🤖 Bot: 📈 Gastos de la semana (10-16 Feb):
+       Total: $245,000 en 12 transacciones
 ```
+
+#### 💰 **Análisis de Presupuesto**
+```
+💬 Tú: Suma gastos y mensualidades, réstalos de 3 millones
+🤖 Bot: 💰 Resumen Financiero - Febrero 2026:
+       
+       📊 Gastos Variables: $245,000
+       🔁 Mensualidades Pagadas: $1,472,000
+       ━━━━━━━━━━━━━━━━━━━━━━━━━━━
+       💸 Total Gastado: $1,717,000
+       
+       💵 Presupuesto Inicial: $3,000,000
+       ✅ Balance Disponible: $1,283,000 (42.8%)
+```
+
+#### 🏪 **Categorización Automática**
+```
+💬 Tú: Compré en D1 por 120 mil
+🤖 Bot: 🛒 Registrado: $120,000 en mercado (D1 detectado)
+
+💬 Tú: Fui al Éxito, 85k
+🤖 Bot: 🛍️ Anotado: $85,000 en mercado (Éxito detectado)
+```
+
+### **🎯 Categorías Disponibles**
+
+El bot clasifica automáticamente tus gastos en estas categorías:
+
+| Categoría | Descripción | Ejemplos |
+|-----------|-------------|----------|
+| 🍔 **comida** | Alimentación y restaurantes | Snacks, restaurantes, café |
+| 🚗 **transporte** | Movilidad | Uber, taxi, bus, gasolina |
+| 🎬 **entretenimiento** | Ocio y diversión | Netflix, cine, videojuegos |
+| 💡 **servicios** | Utilidades del hogar | Internet, luz, agua, gas |
+| ⚕️ **salud** | Gastos médicos | Medicina, doctor, examenes |
+| 🛒 **mercado** | Compras grandes de supermercado | D1, ARA, Éxito, Carulla |
+| 📦 **general** | Otros gastos | Todo lo demás |
 
 ---
 
-## 📁 Estructura del Proyecto
+## 📁 Arquitectura del Proyecto
 
 ```
 I_am_poor/
-├── bot.py                    # Entry point
-├── database.py               # Operaciones con Supabase
 │
-├── config/
-│   └── settings.py          # Configuración y env vars
+├── 🤖 bot.py                    # Punto de entrada principal
+├── 🗄️ database.py               # Operaciones con Supabase
 │
-├── ai/
-│   ├── prompts.py           # System instructions
-│   ├── tools.py             # Función declarations
-│   └── providers.py         # Wrapper Gemini/ChatGPT
+├── ⚙️ config/
+│   └── settings.py              # Variables de entorno y configuración
 │
-├── handlers/
-│   ├── commands.py          # Comandos de Telegram
-│   └── messages.py          # Handler de mensajes
+├── 🧠 ai/
+│   ├── prompts.py               # Instrucciones del sistema para la IA
+│   ├── tools.py                 # Declaraciones de funciones (function calling)
+│   └── providers.py             # Wrapper unificado para Gemini/ChatGPT
 │
-├── core/
-│   └── session_manager.py   # Gestión de sesiones
+├── 📞 handlers/
+│   ├── commands.py              # Manejadores de comandos (/start, /help, etc.)
+│   └── messages.py              # Procesamiento de mensajes de texto
 │
-└── requirements.txt
+├── 🔧 core/
+│   └── session_manager.py       # Gestión de contexto conversacional
+│
+└── 📦 requirements.txt          # Dependencias de Python
+```
+
+### **Componentes Clave**
+
+- **`bot.py`**: Inicializa el bot de Telegram y conecta todos los módulos
+- **`database.py`**: Maneja todas las operaciones CRUD con Supabase
+- **`ai/providers.py`**: Abstracción que permite cambiar entre Gemini y ChatGPT
+- **`ai/tools.py`**: Define las funciones que la IA puede ejecutar (function calling)
+- **`core/session_manager.py`**: Mantiene hasta 20 mensajes de historial conversacional
+- **`handlers/`**: Separa la lógica de comandos y mensajes de texto
+
+---
+
+## 🐛 Solución de Problemas Comunes
+
+### ❌ **"TELEGRAM_BOT_TOKEN no configurado"**
+
+**Causa:** El archivo `.env` no existe o el token está mal configurado.
+
+**Solución:**
+```bash
+# 1. Verifica que existe .env
+ls -la .env
+
+# 2. Verifica que no hay espacios en el token
+cat .env | grep TELEGRAM_BOT_TOKEN
+
+# 3. Asegúrate de que el token es válido
+# Debe tener formato: 1234567890:ABCdefGHIjklMNOpqrsTUVwxyz
 ```
 
 ---
 
-## 🐛 Solución de Problemas
+### ❌ **"Error al conectar con Supabase"**
 
-**Error: "TELEGRAM_BOT_TOKEN no configurado"**
-- Verifica que el archivo `.env` existe
-- Asegúrate de que el token es correcto (sin espacios)
+**Causa:** Las credenciales de Supabase son incorrectas o las tablas no existen.
 
-**Error: "Error al conectar con Supabase"**
-- Verifica que las tablas existen en Supabase
-- Confirma que `SUPABASE_URL` y `SUPABASE_KEY` son correctos
+**Solución:**
+```bash
+# 1. Verifica las variables de entorno
+cat .env | grep SUPABASE
 
-**El bot no responde:**
-- Verifica que está ejecutándose sin errores
-- Busca tu bot en Telegram y envía `/start`
-- Revisa los logs en la consola
-
----
-
-## 🎯 Categorías Disponibles
-
-- `comida` - Alimentación
-- `transporte` - Uber, bus, etc.
-- `entretenimiento` - Netflix, cine, etc.
-- `servicios` - Internet, luz, agua
-- `salud` - Medicina, doctor
-- `mercado` - Compras grandes (D1, ARA, Éxito)
-- `general` - Otros gastos
+# 2. Verifica en Supabase Dashboard:
+#    - Que las 3 tablas existen (gastos, gastos_fijos, pagos_realizados)
+#    - Que SUPABASE_URL tiene formato: https://xxxxx.supabase.co
+#    - Que SUPABASE_KEY es la "anon/public" key, no la "service_role"
+```
 
 ---
 
-## � Notas
+### ❌ **El bot no responde**
 
-- El bot mantiene **hasta 20 intercambios** de contexto conversacional
-- Usa **función optimizada** para cálculos complejos (más rápido)
-- **Personalidad sarcástica**: Solo responde temas financieros
+**Posibles causas y soluciones:**
+
+1. **El bot no está ejecutándose**
+   ```bash
+   # Verifica que python bot.py está corriendo
+   ps aux | grep bot.py
+   ```
+
+2. **Error al iniciar**
+   ```bash
+   # Revisa los logs en la consola
+   # Busca mensajes de error en rojo
+   ```
+
+3. **Bot no iniciado en Telegram**
+   - Abre Telegram y busca tu bot por su username
+   - Envía `/start` para iniciar la conversación
+
+4. **Problemas de API Key**
+   ```bash
+   # Verifica que la API key de IA es válida
+   cat .env | grep API_KEY
+   
+   # Prueba la key en la consola de tu proveedor
+   # Gemini: https://makersuite.google.com/app/apikey
+   # ChatGPT: https://platform.openai.com/api-keys
+   ```
 
 ---
+
+### ❌ **Error: "ModuleNotFoundError"**
+
+**Solución:**
+```bash
+# Asegúrate de que el entorno virtual está activado
+source venv/bin/activate  # Linux/Mac
+# venv\Scripts\activate   # Windows
+
+# Reinstala las dependencias
+pip install -r requirements.txt
+```
+
+---
+
+## 📚 Notas Técnicas
+
+### **🧠 Contexto Conversacional**
+- El bot mantiene **hasta 20 intercambios** de historial
+- Permite conversaciones naturales con contexto previo
+- El historial se resetea al reiniciar el bot
+
+### **⚡ Optimizaciones**
+- Usa **function calling** para operaciones de base de datos
+- Respuestas más rápidas que enviar todo el contexto a la IA
+- Reduce costos de API tokens
+
+### **🎭 Personalidad**
+- Tono sarcástico y casual
+- Solo responde a temas financieros
+- Rechaza preguntas no relacionadas con finanzas
+
+### **🔒 Seguridad**
+- Las credenciales se cargan desde `.env` (no versionado en Git)
+- La base de datos usa Row Level Security (RLS) de Supabase
+- Las API keys nunca se exponen en logs
+
+---
+
+## 🛣️ Roadmap Futuro
+
+- [ ] Soporte multi-usuario con autenticación
+- [ ] Gráficos de gastos mensuales
+- [ ] Exportar reportes en PDF/Excel
+- [ ] Recordatorios automáticos de facturas pendientes
+- [ ] Integración con bancos (Open Banking)
+- [ ] App móvil nativa
+
+---
+
+## 🤝 Contribuciones
+
+¿Encontraste un bug o tienes una idea? Abre un issue o envía un pull request.
+
+---
+
+## 📄 Licencia
+
+Este proyecto está bajo la licencia MIT. Siéntete libre de usarlo y modificarlo.
+
+---
+
+<div align="center">
 
 **Desarrollado con ❤️ usando Python, Gemini AI y Supabase**
+
+[⬆ Volver arriba](#-asistente-financiero-personal---telegram-bot)
+
+</div>

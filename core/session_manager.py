@@ -4,7 +4,7 @@ Gestión de sesiones de usuario para mantener contexto conversacional.
 
 from google.genai import types
 from config import AI_PROVIDER, gemini_client, logger
-from ai.prompts import SYSTEM_INSTRUCTION
+from ai.prompts import get_system_instruction
 from ai.tools import all_tools
 
 # Diccionario para guardar el historial de chat de cada usuario
@@ -31,11 +31,14 @@ def get_or_create_session(user_id: int):
         # Si NO existe: Crear una nueva sesión de chat
         if AI_PROVIDER == "gemini":
             logger.info(f"🆕 Creando nueva sesión Gemini para usuario {user_id}")
+            # Obtener system instruction con fecha actual
+            system_prompt = get_system_instruction()
+            
             # Crear sesión de chat con historial vacío
             model = gemini_client.models.get_generative_model(
                 model='models/gemini-2.5-flash',
                 config=types.GenerateContentConfig(
-                    system_instruction=SYSTEM_INSTRUCTION,
+                    system_instruction=system_prompt,
                     tools=[all_tools],
                     temperature=0.7
                 )

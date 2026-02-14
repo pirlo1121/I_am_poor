@@ -13,12 +13,18 @@ from ai.tools import execute_function
 from core.session_manager import get_or_create_session, clear_session, MAX_HISTORY_MESSAGES, user_sessions
 
 
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE, user_text: str = None) -> None:
     """
     Maneja todos los mensajes del usuario usando AI (Gemini o ChatGPT) con Function Calling
     y gestión de sesiones por usuario para mantener contexto conversacional.
+    
+    Args:
+        update: Update de Telegram
+        context: Contexto de Telegram
+        user_text: Texto opcional (usado cuando viene de transcripción de voz)
     """
-    user_message = update.message.text
+    # Usar el texto proporcionado o el texto del mensaje
+    user_message = user_text if user_text is not None else update.message.text
     user_id = update.effective_user.id
     
     logger.info(f"Usuario {user_id}: {user_message}")
@@ -95,7 +101,9 @@ async def _process_chatgpt_response(response, user_message: str, user_id: int, u
         
         # Crear mensajes solo con historial + system instruction (sin mensaje vacío del usuario)
         from config import openai
-        messages_with_results = [{"role": "system", "content": SYSTEM_INSTRUCTION}]
+        from ai.prompts import get_system_instruction
+        
+        messages_with_results = [{"role": "system", "content": get_system_instruction()}]
         messages_with_results.extend(user_sessions[user_id])
         
         second_response = openai.chat.completions.create(
@@ -239,4 +247,60 @@ async def _handle_error(e: Exception, user_id: int, update: Update):
         await update.message.reply_text(
             "❌ Hubo un problema procesando tu mensaje. Tu historial se mantiene intacto.\n"
             "Por favor, intenta de nuevo o reformula tu pregunta."
+        )
+
+
+# ============================================
+# NUEVO HANDLER - MENSAJES DE VOZ
+# ============================================
+
+async def handle_voice_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """
+    Maneja mensajes de voz del usuario:
+    1. Descarga el archivo de audio
+    2. Transcribe usando OpenAI Whisper
+    3. Procesa como mensaje de texto normal
+    """
+    user_id = update.effective_user.id
+    
+    try:
+        logger.info(f"🎤 Usuario {user_id} envió mensaje de voz")
+        
+        # Descargar archivo de voz
+        voice = update.message.voice
+        file = await context.bot.get_file(voice.file_id)
+        
+        # Guardar temporalmente
+        import tempfile
+        import os
+        
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.ogg') as tmp:
+            tmp_path = tmp.name
+        
+        await file.download_to_drive(tmp_path)
+        logger.info(f"📥 Audio descargado: {tmp_path}")
+        
+        try:
+            # Transcribir usando Whisper
+            from utils import transcribe_voice_message
+            transcribed_text = await transcribe_voice_message(tmp_path)
+            
+            logger.info(f"📝 Transcripción (user {user_id}): {transcribed_text}")
+            
+            # Procesar el texto transcrito llamando a handle_message con el texto
+            await handle_message(update, context, user_text=transcribed_text)
+            
+        finally:
+            # Limpiar archivo temporal
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)
+                logger.info(f"🧹 Archivo temporal eliminado: {tmp_path}")
+        
+    except Exception as e:
+        logger.error(f"❌ Error procesando mensaje de voz (user {user_id}): {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        
+        await update.message.reply_text(
+            "❌ No pude procesar tu audio. Intenta de nuevo o escribe tu mensaje."
         )

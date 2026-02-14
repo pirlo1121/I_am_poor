@@ -4,7 +4,7 @@ AI Providers wrapper - Unifica Gemini y ChatGPT.
 
 from google.genai import types
 from config import AI_PROVIDER, gemini_client, openai, logger
-from .prompts import SYSTEM_INSTRUCTION
+from .prompts import get_system_instruction
 from .tools import all_tools
 
 
@@ -33,7 +33,8 @@ def generate_ai_response(user_message: str, chat_session=None):
             openai_tools.append(tool_def)
         
         # Construir mensajes con historial
-        messages = [{"role": "system", "content": SYSTEM_INSTRUCTION}]
+        # Obtener system instruction con fecha actual
+        messages = [{"role": "system", "content": get_system_instruction()}]
         
         # Si hay historial, agregarlo
         if chat_session and isinstance(chat_session, list):
@@ -59,11 +60,14 @@ def generate_ai_response(user_message: str, chat_session=None):
             response = chat_session.send_message(user_message)
         else:
             # Modo stateless (para compatibilidad hacia atrás)
+            # Obtener system instruction con fecha actual
+            system_prompt = get_system_instruction()
+            
             response = gemini_client.models.generate_content(
                 model='models/gemini-2.5-flash',
                 contents=user_message,
                 config=types.GenerateContentConfig(
-                    system_instruction=SYSTEM_INSTRUCTION,
+                    system_instruction=system_prompt,
                     tools=[all_tools],
                     temperature=0.7
                 )

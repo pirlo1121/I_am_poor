@@ -286,3 +286,57 @@ class SessionManager:
             logger.info(f"🧹 Limpiadas {len(inactive_users)} sesiones inactivas")
         
         return len(inactive_users)
+
+
+# ============================================
+# NUEVA FUNCIÓN - TRANSCRIPCIÓN DE VOZ
+# ============================================
+
+async def transcribe_voice_message(file_path: str) -> str:
+    """
+    Transcribe un archivo de audio a texto usando OpenAI Whisper API.
+    
+    Args:
+        file_path: Ruta al archivo de audio (.ogg, .mp3, .wav, etc.)
+    
+    Returns:
+        str: Texto transcrito del audio
+    
+    Raises:
+        Exception: Si falla la transcripción
+    """
+    try:
+        import os
+        from openai import OpenAI
+        
+        logger.info(f"🎤 Transcribiendo audio: {file_path}")
+        
+        # Obtener API key de variable de entorno
+        api_key = os.getenv("CHATGPT_API_KEY") or os.getenv("OPENAI_API_KEY")
+        
+        if not api_key:
+            raise Exception("No se encontró CHATGPT_API_KEY o OPENAI_API_KEY en variables de entorno")
+        
+        # Crear cliente de OpenAI
+        client = OpenAI(api_key=api_key)
+        
+        # Abrir y transcribir el archivo
+        with open(file_path, 'rb') as audio_file:
+            transcript = client.audio.transcriptions.create(
+                model="whisper-1",
+                file=audio_file,
+                language="es"  # Forzar español para mejor precisión
+            )
+        
+        transcribed_text = transcript.text
+        
+        logger.info(f"✅ Transcripción exitosa: {transcribed_text[:50]}...")
+        
+        return transcribed_text
+        
+    except Exception as e:
+        logger.error(f"❌ Error transcribiendo audio: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        raise Exception(f"No pude transcribir el audio: {str(e)}")
+
