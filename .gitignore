@@ -1,6 +1,19 @@
-# Añadir al .gitignore
+# ========================================
+# Configuración y Secretos
+# ========================================
 .env
+.env.backup
+
+# ========================================
+# Entorno Virtual de Python
+# ========================================
 venv/
+env/
+ENV/
+
+# ========================================
+# Python Cache
+# ========================================
 __pycache__/
 *.pyc
 *.pyo
@@ -11,7 +24,37 @@ __pycache__/
 *.egg-info/
 dist/
 build/
+*.egg-info/
 
+# ========================================
+# Logs (no necesarios en Git)
+# ========================================
+*.log
+bot.log
+bot_error.log
+bot_output.log
+
+# ========================================
+# Archivos de Documentación/Notas
+# (no necesarios para el funcionamiento del bot)
+# ========================================
 DUPLICATE_MESSAGES_FIX.md
 news.txt
-deploy.md   
+voice_messages_guide.txt
+
+# ========================================
+# IDE y Editores
+# ========================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# ========================================
+# Otros archivos temporales
+# ========================================
+*.bak
+*.tmp
+.cache/
