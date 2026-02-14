@@ -20,7 +20,15 @@ from database import (
     compare_monthly_expenses,
     get_paid_payments,
     get_all_monthly_bills,
-    get_financial_summary  # Nueva función optimizada
+    get_financial_summary,  # Nueva función optimizada
+    # Nuevas funciones - Metas de Ahorro
+    add_savings_goal,
+    get_savings_goals,
+    add_contribution_to_goal,
+    find_savings_goal_by_name,
+    # Nuevas funciones - Análisis Predictivo
+    get_spending_prediction,
+    get_financial_insights
 )
 
 # Definir las herramientas (Tools) para Gemini Function Calling
@@ -263,6 +271,96 @@ all_tools = types.Tool(
                 },
                 required=[]
             )
+        ),
+        
+        # === NUEVAS MEJORAS - METAS DE AHORRO ===
+        
+        types.FunctionDeclaration(
+            name="add_savings_goal",
+            description="Crea una nueva meta de ahorro. Usa cuando el usuario diga que quiere ahorrar dinero para algo específico.",
+            parameters=types.Schema(
+                type=types.Type.OBJECT,
+                properties={
+                    "name": types.Schema(
+                        type=types.Type.STRING,
+                        description="Nombre de la meta (ej: 'Vacaciones', 'Laptop', 'Fondo de emergencia')"
+                    ),
+                    "target_amount": types.Schema(
+                        type=types.Type.NUMBER,
+                        description="Monto objetivo en COP. Convierte 'k' o 'millones': 2M = 2000000"
+                    ),
+                    "deadline": types.Schema(
+                        type=types.Type.STRING,
+                        description="Fecha límite en formato YYYY-MM-DD. Calcula basándote en el contexto. Si dicen 'en 6 meses' calcula la fecha. Opcional."
+                    ),
+                    "category": types.Schema(
+                        type=types.Type.STRING,
+                        description="Categoría de la meta",
+                        enum=["general", "viaje", "tecnología", "emergencia", "educación"]
+                    )
+                },
+                required=["name", "target_amount"]
+            )
+        ),
+        
+        types.FunctionDeclaration(
+            name="get_savings_goals",
+            description="Muestra todas las metas de ahorro activas con progreso y barras visuales. Usa cuando pregunten por metas o cómo van sus ahorros.",
+            parameters=types.Schema(
+                type=types.Type.OBJECT,
+                properties={},
+                required=[]
+            )
+        ),
+        
+        types.FunctionDeclaration(
+            name="add_contribution_to_savings",
+            description="Agrega dinero a una meta de ahorro específica. Usa cuando digan 'agregué X a meta Y' o 'ahorré X para Y'.",
+            parameters=types.Schema(
+                type=types.Type.OBJECT,
+                properties={
+                    "goal_name": types.Schema(
+                        type=types.Type.STRING,
+                        description="Nombre de la meta (buscaremos por coincidencia)"
+                    ),
+                    "amount": types.Schema(
+                        type=types.Type.NUMBER,
+                        description="Monto a agregar en COP"
+                    ),
+                    "description": types.Schema(
+                        type=types.Type.STRING,
+                        description="Descripción opcional del ahorro"
+                    )
+                },
+                required=["goal_name", "amount"]
+            )
+        ),
+        
+        # === NUEVAS MEJORAS - ANÁLISIS PREDICTIVO ===
+        
+        types.FunctionDeclaration(
+            name="get_spending_prediction",
+            description="Proyecta gastos futuros basándose en promedio de últimos 3 meses. Usa cuando pregunten 'cuánto voy a gastar' o pidan proyecciones.",
+            parameters=types.Schema(
+                type=types.Type.OBJECT,
+                properties={
+                    "category": types.Schema(
+                        type=types.Type.STRING,
+                        description="Categoría opcional para proyectar solo esa categoría"
+                    )
+                },
+                required=[]
+            )
+        ),
+        
+        types.FunctionDeclaration(
+            name="get_financial_insights",
+            description="Genera insights y análisis financieros automáticos: comparación con mes anterior, categorías principales, ritmo de gasto, recomendaciones. Usa cuando pidan análisis, insights, consejos o revisar finanzas.",
+            parameters=types.Schema(
+                type=types.Type.OBJECT,
+                properties={},
+                required=[]
+            )
         )
     ]
 )
@@ -358,6 +456,41 @@ async def execute_function(function_name: str, function_args: dict) -> str:
         elif function_name == "get_financial_summary":
             budget = function_args.get("budget")
             return get_financial_summary(budget)
+        
+        # === NUEVAS MEJORAS - METAS DE AHORRO ===
+        elif function_name == "add_savings_goal":
+            result = add_savings_goal(
+                name=function_args.get("name"),
+                target_amount=function_args.get("target_amount"),
+                deadline=function_args.get("deadline"),
+                category=function_args.get("category", "general")
+            )
+            return result["message"]
+        
+        elif function_name == "get_savings_goals":
+            return get_savings_goals()
+        
+        elif function_name == "add_contribution_to_savings":
+            goal_name = function_args.get("goal_name")
+            amount = function_args.get("amount")
+            description = function_args.get("description", "")
+            
+            # Buscar la meta por nombre
+            goal_id = find_savings_goal_by_name(goal_name)
+            
+            if goal_id:
+                result = add_contribution_to_goal(goal_id, amount, description)
+                return result["message"]
+            else:
+                return f"❌ No encontré ninguna meta con el nombre '{goal_name}'. Usa 'ver metas' para ver todas tus metas."
+        
+        # === NUEVAS MEJORAS - ANÁLISIS PREDICTIVO ===
+        elif function_name == "get_spending_prediction":
+            category = function_args.get("category")
+            return get_spending_prediction(category)
+        
+        elif function_name == "get_financial_insights":
+            return get_financial_insights()
             
         else:
             logger.warning(f"⚠️ Función desconocida: {function_name}")

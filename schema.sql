@@ -58,7 +58,36 @@ CREATE INDEX IF NOT EXISTS idx_pagos_gasto_fijo ON pagos_realizados(gasto_fijo_i
 CREATE INDEX IF NOT EXISTS idx_pagos_month_year ON pagos_realizados(month, year);
 
 -- ============================================
--- 5. VERIFICAR TABLAS CREADAS
+-- 5. NUEVAS TABLAS - SISTEMA DE METAS DE AHORRO
+-- ============================================
+CREATE TABLE IF NOT EXISTS savings_goals (
+  id BIGSERIAL PRIMARY KEY,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  name TEXT NOT NULL,
+  target_amount FLOAT NOT NULL,
+  current_amount FLOAT DEFAULT 0,
+  deadline DATE,
+  category TEXT DEFAULT 'general',
+  active BOOLEAN DEFAULT TRUE
+);
+
+-- Índice para búsquedas rápidas por estado activo
+CREATE INDEX IF NOT EXISTS idx_savings_goals_active ON savings_goals(active);
+
+-- Tabla de contribuciones a metas de ahorro
+CREATE TABLE IF NOT EXISTS savings_contributions (
+  id BIGSERIAL PRIMARY KEY,
+  goal_id BIGINT NOT NULL REFERENCES savings_goals(id) ON DELETE CASCADE,
+  amount FLOAT NOT NULL,
+  contributed_at TIMESTAMPTZ DEFAULT NOW(),
+  description TEXT
+);
+
+-- Índice para búsquedas rápidas por meta
+CREATE INDEX IF NOT EXISTS idx_contributions_goal ON savings_contributions(goal_id);
+
+-- ============================================
+-- 6. VERIFICAR TABLAS CREADAS
 -- ============================================
 SELECT 'Tablas creadas exitosamente!' as status;
 
@@ -76,3 +105,13 @@ WHERE table_name = 'gastos_fijos';
 SELECT column_name, data_type 
 FROM information_schema.columns 
 WHERE table_name = 'pagos_realizados';
+
+-- Ver estructura de savings_goals
+SELECT column_name, data_type 
+FROM information_schema.columns 
+WHERE table_name = 'savings_goals';
+
+-- Ver estructura de savings_contributions
+SELECT column_name, data_type 
+FROM information_schema.columns 
+WHERE table_name = 'savings_contributions';

@@ -1073,6 +1073,472 @@ def get_financial_summary(budget: Optional[float] = None) -> str:
         return f"❌ Error al generar resumen financiero: {str(e)}"
 
 
+# ============================================
+# NUEVAS MEJORAS CREATIVAS - METAS DE AHORRO
+# ============================================
+
+def add_savings_goal(name: str, target_amount: float, deadline: Optional[str] = None, category: str = "general") -> Dict:
+    """
+    Crea una nueva meta de ahorro.
+    
+    Args:
+        name: Nombre de la meta (ej: "Vacaciones", "Laptop")
+        target_amount: Monto objetivo en COP
+        deadline: Fecha límite en formato YYYY-MM-DD (opcional)
+        category: Categoría de la meta
+    
+    Returns:
+        Dict con success, message
+    """
+    try:
+        client = init_supabase()
+        
+        goal_data = {
+            "name": name.strip(),
+            "target_amount": float(target_amount),
+            "current_amount": 0.0,
+            "category": category.lower(),
+            "active": True
+        }
+        
+        if deadline:
+            goal_data["deadline"] = deadline
+        
+        response = client.table("savings_goals").insert(goal_data).execute()
+        
+        # Calcular sugerencia mensual si hay deadline
+        suggestion = ""
+        if deadline:
+            from datetime import datetime
+            try:
+                deadline_date = datetime.strptime(deadline, "%Y-%m-%d")
+                now = datetime.now()
+                months_left = max(1, ((deadline_date.year - now.year) * 12 + deadline_date.month - now.month))
+                monthly_saving = target_amount / months_left
+                suggestion = f"\n💰 Sugerencia: Ahorra ${monthly_saving:,.0f} COP al mes durante {months_left} meses"
+            except:
+                pass
+        
+        logger.info(f"✅ Meta creada: {name} - ${target_amount}")
+        
+        return {
+            "success": True,
+            "message": f"🎯 Meta de Ahorro Creada:\n📝 {name}\n💵 Objetivo: ${target_amount:,.0f} COP\n📅 Plazo: {deadline if deadline else 'Sin plazo definido'}{suggestion}"
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Error creando meta: {e}")
+        return {
+            "success": False,
+            "message": f"❌ Error al crear meta de ahorro: {str(e)}"
+        }
+
+
+def get_savings_goals() -> str:
+    """Obtiene todas las metas de ahorro activas con su progreso."""
+    try:
+        client = init_supabase()
+        
+        response = client.table("savings_goals") \
+            .select("*") \
+            .eq("active", True) \
+            .order("created_at", desc=True) \
+            .execute()
+        
+        goals = response.data
+        
+        if not goals:
+            return "📭 No tienes metas de ahorro configuradas aún.\n\n💡 Crea una con: 'Quiero ahorrar X para Y'"
+        
+        result = "🎯 **Tus Metas de Ahorro:**\n\n"
+        
+        for idx, goal in enumerate(goals, 1):
+            name = goal.get("name", "")
+            target = goal.get("target_amount", 0)
+            current = goal.get("current_amount", 0)
+            deadline = goal.get("deadline", "")
+            
+            percentage = (current / target * 100) if target > 0 else 0
+            
+            # Emoji según progreso
+            if percentage >= 100:
+                emoji = "🎉"
+            elif percentage >= 75:
+                emoji = "🔥"
+            elif percentage >= 50:
+                emoji = "💪"
+            elif percentage >= 25:
+                emoji = "📈"
+            else:
+                emoji = "🌱"
+            
+            result += f"{idx}. {emoji} **{name}**\n"
+            result += f"   💰 ${current:,.0f} de ${target:,.0f} ({percentage:.1f}%)\n"
+            
+            if deadline:
+                from datetime import datetime
+                try:
+                    deadline_date = datetime.strptime(deadline, "%Y-%m-%d")
+                    now = datetime.now()
+                    days_left = (deadline_date - now).days
+                    if days_left > 0:
+                        result += f"   ⏰ {days_left} días restantes\n"
+                    else:
+                        result += f"   ⚠️ Plazo vencido\n"
+                except:
+                    pass
+            
+            # Barra de progreso visual
+            bar_length = 15
+            filled = int(bar_length * percentage / 100)
+            bar = "█" * filled + "░" * (bar_length - filled)
+            result += f"   [{bar}]\n\n"
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"❌ Error: {e}")
+        return f"❌ Error al consultar metas: {str(e)}"
+
+
+def add_contribution_to_goal(goal_id: int, amount: float, description: str = "") -> Dict:
+    """
+    Agrega dinero a una meta de ahorro.
+    
+    Args:
+        goal_id: ID de la meta
+        amount: Monto a agregar
+        description: Descripción opcional
+    
+    Returns:
+        Dict con success, message
+    """
+    try:
+        client = init_supabase()
+        
+        # Verificar que la meta existe
+        goal_response = client.table("savings_goals") \
+            .select("*") \
+            .eq("id", goal_id) \
+            .eq("active", True) \
+            .execute()
+        
+        if not goal_response.data:
+            return {
+                "success": False,
+                "message": "❌ Meta no encontrada"
+            }
+        
+        goal = goal_response.data[0]
+        goal_name = goal.get("name", "")
+        target_amount = goal.get("target_amount", 0)
+        current_amount = goal.get("current_amount", 0)
+        
+        # Registrar la contribución
+        contribution_data = {
+            "goal_id": goal_id,
+            "amount": float(amount),
+            "description": description.strip() if description else f"Contribución a {goal_name}"
+        }
+        
+        client.table("savings_contributions").insert(contribution_data).execute()
+        
+        # Actualizar el monto actual de la meta
+        new_amount = current_amount + amount
+        client.table("savings_goals") \
+            .update({"current_amount": new_amount}) \
+            .eq("id", goal_id) \
+            .execute()
+        
+        percentage = (new_amount / target_amount * 100) if target_amount > 0 else 0
+        remaining = target_amount - new_amount
+        
+        message = f"✅ Contribución Registrada:\n"
+        message += f"🎯 Meta: {goal_name}\n"
+        message += f"💰 Agregaste: ${amount:,.0f} COP\n"
+        message += f"📊 Progreso: ${new_amount:,.0f} de ${target_amount:,.0f} ({percentage:.1f}%)\n"
+        
+        if percentage >= 100:
+            message += f"\n🎉 ¡FELICITACIONES! ¡Meta alcanzada! 🎉"
+        else:
+            message += f"💪 Faltan: ${remaining:,.0f} COP"
+        
+        logger.info(f"✅ Contribución: ${amount} a meta {goal_name}")
+        
+        return {
+            "success": True,
+            "message": message
+        }
+        
+    except Exception as e:
+        logger.error(f"❌ Error: {e}")
+        return {
+            "success": False,
+            "message": f"❌ Error al agregar contribución: {str(e)}"
+        }
+
+
+# ============================================
+# ANÁLISIS PREDICTIVO E INSIGHTS
+# ============================================
+
+def get_spending_prediction(category: Optional[str] = None) -> str:
+    """
+    Proyecta gastos futuros basándose en el promedio de los últimos 3 meses.
+    
+    Args:
+        category: Categoría específica a proyectar (opcional)
+    
+    Returns:
+        str: Proyección formateada
+    """
+    try:
+        client = init_supabase()
+        
+        now = datetime.now()
+        
+        # Calcular los últimos 3 meses
+        months_data = []
+        
+        for i in range(3):
+            month = now.month - i
+            year = now.year
+            
+            if month <= 0:
+                month += 12
+                year -= 1
+            
+            # Obtener gastos del mes
+            from calendar import monthrange
+            last_day = monthrange(year, month)[1]
+            
+            start_date = f"{year}-{month:02d}-01T00:00:00"
+            end_date = f"{year}-{month:02d}-{last_day}T23:59:59"
+            
+            query = client.table("gastos") \
+                .select("amount, category") \
+                .gte("created_at", start_date) \
+                .lte("created_at", end_date)
+            
+            if category:
+                query = query.eq("category", category.lower())
+            
+            response = query.execute()
+            
+            total = sum(e.get("amount", 0) for e in response.data)
+            months_data.append(total)
+        
+        if not months_data or all(m == 0 for m in months_data):
+            return "📊 No hay suficientes datos históricos para hacer una proyección"
+        
+        # Calcular promedio
+        average = sum(months_data) / len(months_data)
+        
+        # Calcular tendencia
+        if len(months_data) >= 2:
+            trend = ((months_data[0] - months_data[-1]) / months_data[-1] * 100) if months_data[-1] > 0 else 0
+        else:
+            trend = 0
+        
+        month_names = ["", "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", 
+                      "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"]
+        
+        next_month = now.month + 1
+        next_year = now.year
+        if next_month > 12:
+            next_month = 1
+            next_year += 1
+        
+        result = f"📊 **Proyección de Gastos para {month_names[next_month]} {next_year}:**\n\n"
+        
+        if category:
+            result += f"🏷️ Categoría: {category.title()}\n"
+        
+        result += f"💰 Proyección: ~${average:,.0f} COP\n"
+        result += f"📈 Basado en promedio de últimos 3 meses\n\n"
+        
+        result += f"**Histórico:**\n"
+        for i, amount in enumerate(months_data):
+            m = now.month - i
+            y = now.year
+            if m <= 0:
+                m += 12
+                y -= 1
+            result += f"• {month_names[m]}: ${amount:,.0f}\n"
+        
+        result += f"\n**Tendencia:** "
+        if trend > 10:
+            result += f"📈 Incremento del {abs(trend):.1f}%"
+        elif trend < -10:
+            result += f"📉 Reducción del {abs(trend):.1f}%"
+        else:
+            result += f"➡️ Estable"
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"❌ Error: {e}")
+        return f"❌ Error en proyección: {str(e)}"
+
+
+def get_financial_insights() -> str:
+    """
+    Genera insights financieros automáticos basados en patrones de gasto.
+    
+    Returns:
+        str: Insights formateados
+    """
+    try:
+        client = init_supabase()
+        
+        now = datetime.now()
+        current_month = now.month
+        current_year = now.year
+        
+        # Obtener gastos del mes actual
+        from calendar import monthrange
+        last_day = monthrange(current_year, current_month)[1]
+        start_date = f"{current_year}-{current_month:02d}-01T00:00:00"
+        end_date = f"{current_year}-{current_month:02d}-{last_day}T23:59:59"
+        
+        current_response = client.table("gastos") \
+            .select("*") \
+            .gte("created_at", start_date) \
+            .lte("created_at", end_date) \
+            .execute()
+        
+        current_expenses = current_response.data
+        
+        if not current_expenses:
+            return "📊 No hay suficientes datos para generar insights este mes"
+        
+        # Analizar por categoría
+        by_category = {}
+        total_current = 0
+        
+        for expense in current_expenses:
+            cat = expense.get("category", "general")
+            amount = expense.get("amount", 0)
+            
+            if cat not in by_category:
+                by_category[cat] = 0
+            
+            by_category[cat] += amount
+            total_current += amount
+        
+        # Obtener gastos del mes anterior para comparación
+        prev_month = current_month - 1
+        prev_year = current_year
+        if prev_month <= 0:
+            prev_month = 12
+            prev_year -= 1
+        
+        last_day_prev = monthrange(prev_year, prev_month)[1]
+        start_date_prev = f"{prev_year}-{prev_month:02d}-01T00:00:00"
+        end_date_prev = f"{prev_year}-{prev_month:02d}-{last_day_prev}T23:59:59"
+        
+        prev_response = client.table("gastos") \
+            .select("amount") \
+            .gte("created_at", start_date_prev) \
+            .lte("created_at", end_date_prev) \
+            .execute()
+        
+        total_prev = sum(e.get("amount", 0) for e in prev_response.data)
+        
+        # Construir insights
+        result = f"💡 **Insights Financieros - {now.strftime('%B %Y')}:**\n\n"
+        
+        # Comparación mensual
+        if total_prev > 0:
+            diff = total_current - total_prev
+            diff_pct = (diff / total_prev * 100)
+            
+            if diff_pct > 10:
+                result += f"⚠️ **Alerta:** Gastas {abs(diff_pct):.1f}% MÁS que el mes pasado (+${abs(diff):,.0f})\n\n"
+            elif diff_pct < -10:
+                result += f"✅ **Excelente:** Gastas {abs(diff_pct):.1f}% MENOS que el mes pasado (-${abs(diff):,.0f})\n\n"
+            else:
+                result += f"➡️ **Estable:** Gastos similares al mes pasado\n\n"
+        
+        # Categoría que más gasta
+        if by_category:
+            sorted_cats = sorted(by_category.items(), key=lambda x: x[1], reverse=True)
+            top_cat, top_amount = sorted_cats[0]
+            percentage = (top_amount / total_current * 100) if total_current > 0 else 0
+            
+            result += f"📊 **Categoría Dominante:**\n"
+            result += f"   {top_cat.title()}: ${top_amount:,.0f} ({percentage:.1f}% del total)\n"
+            
+            # Sugerencias basadas en porcentajes recomendados
+            recommendations = {
+                "comida": 25,
+                "transporte": 15,
+                "entretenimiento": 10,
+                "servicios": 20
+            }
+            
+            if top_cat in recommendations:
+                recommended = recommendations[top_cat]
+                if percentage > recommended + 10:
+                    savings_potential = top_amount * 0.15  # 15% de reducción
+                    result += f"   ⚠️ Recomendado: ~{recommended}%\n"
+                    result += f"   💡 Podrías ahorrar ~${savings_potential:,.0f} optimizando esta categoría\n"
+            
+            result += "\n"
+        
+        # Promedio diario
+        days_in_month = last_day
+        current_day = now.day
+        daily_avg = total_current / current_day if current_day > 0 else 0
+        projected_monthly = daily_avg * days_in_month
+        
+        result += f"📅 **Ritmo de Gasto:**\n"
+        result += f"   Promedio diario: ${daily_avg:,.0f}\n"
+        result += f"   Proyección fin de mes: ${projected_monthly:,.0f}\n\n"
+        
+        # Recomendaciones
+        result += f"💪 **Recomendaciones:**\n"
+        
+        if projected_monthly > total_current * 1.2:
+            result += f"   • Estás gastando más rápido de lo normal\n"
+            result += f"   • Considera revisar gastos no esenciales\n"
+        else:
+            result += f"   • Ritmo de gasto saludable\n"
+        
+        if len(by_category) > 5:
+            result += f"   • Muchas categorías activas, considera consolidar\n"
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"❌ Error: {e}")
+        return f"❌ Error generando insights: {str(e)}"
+
+
+# Helper para buscar meta por nombre (para AI)
+def find_savings_goal_by_name(name: str) -> Optional[int]:
+    """Busca una meta de ahorro por nombre y retorna su ID."""
+    try:
+        client = init_supabase()
+        
+        response = client.table("savings_goals") \
+            .select("*") \
+            .eq("active", True) \
+            .execute()
+        
+        search_term = name.strip().lower()
+        for goal in response.data:
+            goal_name = goal.get("name", "").lower()
+            if search_term in goal_name or goal_name in search_term:
+                return goal.get("id")
+        
+        return None
+        
+    except Exception as e:
+        logger.error(f"❌ Error buscando meta: {e}")
+        return None
+
+
 # Inicializar la conexión al importar el módulo
 try:
     init_supabase()
