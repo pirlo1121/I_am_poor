@@ -58,3 +58,4 @@ voice_messages_guide.txt
 *.bak
 *.tmp
 .cache/
+DEPLOY_FIX.md

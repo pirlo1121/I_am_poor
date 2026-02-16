@@ -87,7 +87,24 @@ CREATE TABLE IF NOT EXISTS savings_contributions (
 CREATE INDEX IF NOT EXISTS idx_contributions_goal ON savings_contributions(goal_id);
 
 -- ============================================
--- 6. VERIFICAR TABLAS CREADAS
+-- 6. CREAR TABLA INGRESOS (Salario + Extras)
+-- ============================================
+CREATE TABLE IF NOT EXISTS ingresos (
+  id BIGSERIAL PRIMARY KEY,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  amount FLOAT NOT NULL,
+  type TEXT NOT NULL CHECK (type IN ('salario', 'extra')),
+  description TEXT,
+  month INTEGER NOT NULL CHECK (month >= 1 AND month <= 12),
+  year INTEGER NOT NULL CHECK (year >= 2020)
+);
+
+-- Índices para búsquedas rápidas
+CREATE INDEX IF NOT EXISTS idx_ingresos_type ON ingresos(type);
+CREATE INDEX IF NOT EXISTS idx_ingresos_month_year ON ingresos(month, year);
+
+-- ============================================
+-- 7. VERIFICAR TABLAS CREADAS
 -- ============================================
 SELECT 'Tablas creadas exitosamente!' as status;
 

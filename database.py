@@ -529,6 +529,46 @@ def mark_payment_done(recurring_id: int) -> Dict:
         }
 
 
+def unmark_payment_done(recurring_id: int) -> Dict:
+    """Desmarca un gasto fijo como pagado para el mes actual (elimina el pago)."""
+    try:
+        client = init_supabase()
+        now = datetime.now()
+        
+        # Verificar que el gasto fijo existe
+        recurring_response = client.table("gastos_fijos") \
+            .select("description") \
+            .eq("id", recurring_id) \
+            .execute()
+        
+        if not recurring_response.data:
+            return {"success": False, "message": "❌ Gasto fijo no encontrado"}
+        
+        description = recurring_response.data[0].get("description", "")
+        
+        # Buscar el pago del mes actual
+        payment_response = client.table("pagos_realizados") \
+            .select("id") \
+            .eq("gasto_fijo_id", recurring_id) \
+            .eq("month", now.month) \
+            .eq("year", now.year) \
+            .execute()
+        
+        if not payment_response.data:
+            return {"success": False, "message": f"⚠️ '{description}' no está marcada como pagada este mes"}
+        
+        # Eliminar el pago
+        payment_id = payment_response.data[0]["id"]
+        client.table("pagos_realizados").delete().eq("id", payment_id).execute()
+        
+        logger.info(f"↩️ Pago desmarcado: {description}")
+        return {"success": True, "message": f"↩️ Pago desmarcado: {description} vuelve a estar pendiente este mes"}
+        
+    except Exception as e:
+        logger.error(f"❌ Error: {e}")
+        return {"success": False, "message": f"❌ Error al desmarcar pago: {str(e)}"}
+
+
 def get_paid_payments() -> str:
     """Obtiene las facturas/mensualidades ya pagadas del mes actual."""
     try:
@@ -1537,6 +1577,150 @@ def find_savings_goal_by_name(name: str) -> Optional[int]:
     except Exception as e:
         logger.error(f"❌ Error buscando meta: {e}")
         return None
+
+
+# ============================================
+# FUNCIONES DE INGRESOS
+# ============================================
+
+def set_fixed_salary(amount: float) -> Dict:
+    """Define o actualiza el salario fijo del mes actual."""
+    try:
+        client = init_supabase()
+        now = datetime.now()
+        
+        # Verificar si ya existe un salario para este mes
+        existing = client.table("ingresos") \
+            .select("id") \
+            .eq("type", "salario") \
+            .eq("month", now.month) \
+            .eq("year", now.year) \
+            .execute()
+        
+        if existing.data:
+            # Actualizar
+            client.table("ingresos") \
+                .update({"amount": float(amount)}) \
+                .eq("id", existing.data[0]["id"]) \
+                .execute()
+            logger.info(f"✅ Salario actualizado: ${amount}")
+            return {"success": True, "message": f"💰 Salario actualizado a ${amount:,.0f} COP para este mes"}
+        else:
+            # Insertar
+            client.table("ingresos").insert({
+                "amount": float(amount),
+                "type": "salario",
+                "description": "Salario fijo",
+                "month": now.month,
+                "year": now.year
+            }).execute()
+            logger.info(f"✅ Salario registrado: ${amount}")
+            return {"success": True, "message": f"💰 Salario fijo registrado: ${amount:,.0f} COP"}
+        
+    except Exception as e:
+        logger.error(f"❌ Error: {e}")
+        return {"success": False, "message": f"❌ Error al registrar salario: {str(e)}"}
+
+
+def add_extra_income(amount: float, description: str = "") -> Dict:
+    """Registra un ingreso extra con fecha y descripción."""
+    try:
+        client = init_supabase()
+        now = datetime.now()
+        
+        client.table("ingresos").insert({
+            "amount": float(amount),
+            "type": "extra",
+            "description": description.strip() if description else "Ingreso extra",
+            "month": now.month,
+            "year": now.year
+        }).execute()
+        
+        logger.info(f"✅ Ingreso extra: ${amount} - {description}")
+        return {"success": True, "message": f"✅ Ingreso extra registrado: ${amount:,.0f} COP - {description or 'Sin descripción'}"}
+        
+    except Exception as e:
+        logger.error(f"❌ Error: {e}")
+        return {"success": False, "message": f"❌ Error al registrar ingreso: {str(e)}"}
+
+
+def get_extra_incomes(month: Optional[int] = None, year: Optional[int] = None) -> str:
+    """Lista todos los ingresos extras del mes."""
+    try:
+        client = init_supabase()
+        now = datetime.now()
+        target_month = month if month else now.month
+        target_year = year if year else now.year
+        
+        response = client.table("ingresos") \
+            .select("*") \
+            .eq("type", "extra") \
+            .eq("month", target_month) \
+            .eq("year", target_year) \
+            .order("created_at", desc=True) \
+            .execute()
+        
+        extras = response.data
+        if not extras:
+            return "📭 No hay ingresos extras registrados este mes"
+        
+        total = sum(e.get("amount", 0) for e in extras)
+        result = f"💵 **Ingresos Extras del mes ({len(extras)}):**\n\n"
+        
+        for idx, inc in enumerate(extras, 1):
+            amount = inc.get("amount", 0)
+            desc = inc.get("description", "Sin descripción")
+            date = inc.get("created_at", "")[:10]
+            result += f"{idx}. ${amount:,.0f} - {desc} ({date})\n"
+        
+        result += f"\n💰 **Total extras**: ${total:,.0f} COP"
+        return result
+        
+    except Exception as e:
+        logger.error(f"❌ Error: {e}")
+        return f"❌ Error al consultar ingresos: {str(e)}"
+
+
+def get_income_summary(month: Optional[int] = None, year: Optional[int] = None) -> str:
+    """Resumen de ingresos del mes: salario + extras = total."""
+    try:
+        client = init_supabase()
+        now = datetime.now()
+        target_month = month if month else now.month
+        target_year = year if year else now.year
+        
+        response = client.table("ingresos") \
+            .select("*") \
+            .eq("month", target_month) \
+            .eq("year", target_year) \
+            .execute()
+        
+        incomes = response.data
+        if not incomes:
+            return "📭 No hay ingresos registrados este mes"
+        
+        salary = 0
+        extras_total = 0
+        extras_count = 0
+        
+        for inc in incomes:
+            if inc.get("type") == "salario":
+                salary = inc.get("amount", 0)
+            else:
+                extras_total += inc.get("amount", 0)
+                extras_count += 1
+        
+        total = salary + extras_total
+        result = f"💵 **Ingresos del mes:**\n"
+        result += f"   💼 Salario: ${salary:,.0f} COP\n"
+        result += f"   ➕ Extras: ${extras_total:,.0f} COP ({extras_count} registros)\n"
+        result += f"   📊 **Total**: ${total:,.0f} COP"
+        
+        return result
+        
+    except Exception as e:
+        logger.error(f"❌ Error: {e}")
+        return f"❌ Error al consultar ingresos: {str(e)}"
 
 
 # Inicializar la conexión al importar el módulo

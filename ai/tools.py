@@ -15,20 +15,26 @@ from database import (
     get_recurring_expenses,
     get_pending_payments,
     mark_payment_done,
+    unmark_payment_done,
     find_recurring_by_name,
     get_expenses_by_month,
     compare_monthly_expenses,
     get_paid_payments,
     get_all_monthly_bills,
-    get_financial_summary,  # Nueva función optimizada
-    # Nuevas funciones - Metas de Ahorro
+    get_financial_summary,
+    # Metas de Ahorro
     add_savings_goal,
     get_savings_goals,
     add_contribution_to_goal,
     find_savings_goal_by_name,
-    # Nuevas funciones - Análisis Predictivo
+    # Análisis Predictivo
     get_spending_prediction,
-    get_financial_insights
+    get_financial_insights,
+    # Ingresos
+    set_fixed_salary,
+    add_extra_income,
+    get_extra_incomes,
+    get_income_summary
 )
 
 # Definir las herramientas (Tools) para Gemini Function Calling
@@ -191,7 +197,7 @@ all_tools = types.Tool(
             )
         ),
         
-        # === NUEVAS HERRAMIENTAS - MEJORAS ===
+        # === MARCAR / DESMARCAR PAGOS ===
         
         types.FunctionDeclaration(
             name="get_expenses_by_month",
@@ -229,13 +235,28 @@ all_tools = types.Tool(
         
         types.FunctionDeclaration(
             name="find_recurring_by_name",
-            description="Busca un gasto fijo por nombre (case-insensitive). Retorna el ID para usar con mark_bill_paid. Usa cuando digan 'X pagado' o 'pagué X'.",
+            description="Busca un gasto fijo por nombre y LO MARCA COMO PAGADO automáticamente. Usa cuando digan 'pagué X', 'X pagado'.",
             parameters=types.Schema(
                 type=types.Type.OBJECT,
                 properties={
                     "description": types.Schema(
                         type=types.Type.STRING,
                         description="Nombre del gasto fijo a buscar (ej: 'arriendo', 'luz', 'internet')"
+                    )
+                },
+                required=["description"]
+            )
+        ),
+        
+        types.FunctionDeclaration(
+            name="find_recurring_by_name_for_unmark",
+            description="Busca un gasto fijo por nombre y LO DESMARCA (quita el pago) del mes actual. Usa cuando digan 'no pagué X', 'desmarcar X', 'quitar pago X'.",
+            parameters=types.Schema(
+                type=types.Type.OBJECT,
+                properties={
+                    "description": types.Schema(
+                        type=types.Type.STRING,
+                        description="Nombre del gasto fijo a desmarcar (ej: 'arriendo', 'luz', 'internet')"
                     )
                 },
                 required=["description"]
@@ -257,23 +278,38 @@ all_tools = types.Tool(
             )
         ),
         
+        types.FunctionDeclaration(
+            name="unmark_bill_paid",
+            description="Desmarca una factura/gasto fijo como pagado este mes (revierte el pago). Usa cuando digan 'no pagué X' o 'desmarcar X'.",
+            parameters=types.Schema(
+                type=types.Type.OBJECT,
+                properties={
+                    "recurring_expense_id": types.Schema(
+                        type=types.Type.INTEGER,
+                        description="ID del gasto fijo a desmarcar"
+                    )
+                },
+                required=["recurring_expense_id"]
+            )
+        ),
+        
         # === FUNCIÓN OPTIMIZADA - RESUMEN RÁPIDO ===
         types.FunctionDeclaration(
             name="get_financial_summary",
-            description="🚀 FUNCIÓN OPTIMIZADA - Usa ESTA en lugar de múltiples llamadas. Obtiene TODO el resumen financiero del mes en UNA SOLA operación super rápida: gastos variables + mensualidades pagadas + mensualidades pendientes + balance vs presupuesto. MUCHO MÁS RÁPIDO que llamar funciones separadas.",
+            description="🚀 FUNCIÓN OPTIMIZADA - Obtiene TODO el resumen financiero del mes en UNA operación: gastos + mensualidades + balance. MUCHO MÁS RÁPIDO que llamar funciones separadas.",
             parameters=types.Schema(
                 type=types.Type.OBJECT,
                 properties={
                     "budget": types.Schema(
                         type=types.Type.NUMBER,
-                        description="Presupuesto mensual en COP. Si el usuario menciona un presupuesto o balance, úsalo aquí. Ejemplo: 'tengo 3 millones' → budget=3000000"
+                        description="Presupuesto mensual en COP. Ejemplo: 'tengo 3 millones' → budget=3000000"
                     )
                 },
                 required=[]
             )
         ),
         
-        # === NUEVAS MEJORAS - METAS DE AHORRO ===
+        # === METAS DE AHORRO ===
         
         types.FunctionDeclaration(
             name="add_savings_goal",
@@ -283,7 +319,7 @@ all_tools = types.Tool(
                 properties={
                     "name": types.Schema(
                         type=types.Type.STRING,
-                        description="Nombre de la meta (ej: 'Vacaciones', 'Laptop', 'Fondo de emergencia')"
+                        description="Nombre de la meta (ej: 'Vacaciones', 'Laptop')"
                     ),
                     "target_amount": types.Schema(
                         type=types.Type.NUMBER,
@@ -291,7 +327,7 @@ all_tools = types.Tool(
                     ),
                     "deadline": types.Schema(
                         type=types.Type.STRING,
-                        description="Fecha límite en formato YYYY-MM-DD. Calcula basándote en el contexto. Si dicen 'en 6 meses' calcula la fecha. Opcional."
+                        description="Fecha límite en formato YYYY-MM-DD. Opcional."
                     ),
                     "category": types.Schema(
                         type=types.Type.STRING,
@@ -305,7 +341,7 @@ all_tools = types.Tool(
         
         types.FunctionDeclaration(
             name="get_savings_goals",
-            description="Muestra todas las metas de ahorro activas con progreso y barras visuales. Usa cuando pregunten por metas o cómo van sus ahorros.",
+            description="Muestra todas las metas de ahorro activas con progreso. Usa cuando pregunten por metas o ahorros.",
             parameters=types.Schema(
                 type=types.Type.OBJECT,
                 properties={},
@@ -315,7 +351,7 @@ all_tools = types.Tool(
         
         types.FunctionDeclaration(
             name="add_contribution_to_savings",
-            description="Agrega dinero a una meta de ahorro específica. Usa cuando digan 'agregué X a meta Y' o 'ahorré X para Y'.",
+            description="Agrega dinero a una meta de ahorro. Usa cuando digan 'agregué X a meta Y' o 'ahorré X para Y'.",
             parameters=types.Schema(
                 type=types.Type.OBJECT,
                 properties={
@@ -336,7 +372,7 @@ all_tools = types.Tool(
             )
         ),
         
-        # === NUEVAS MEJORAS - ANÁLISIS PREDICTIVO ===
+        # === ANÁLISIS PREDICTIVO ===
         
         types.FunctionDeclaration(
             name="get_spending_prediction",
@@ -355,10 +391,84 @@ all_tools = types.Tool(
         
         types.FunctionDeclaration(
             name="get_financial_insights",
-            description="Genera insights y análisis financieros automáticos: comparación con mes anterior, categorías principales, ritmo de gasto, recomendaciones. Usa cuando pidan análisis, insights, consejos o revisar finanzas.",
+            description="Genera insights y análisis financieros automáticos. Usa cuando pidan análisis, insights, consejos o revisar finanzas.",
             parameters=types.Schema(
                 type=types.Type.OBJECT,
                 properties={},
+                required=[]
+            )
+        ),
+        
+        # === INGRESOS ===
+        
+        types.FunctionDeclaration(
+            name="set_fixed_salary",
+            description="Define o actualiza el salario fijo mensual. Usa cuando digan 'mi salario es X', 'gano X al mes'.",
+            parameters=types.Schema(
+                type=types.Type.OBJECT,
+                properties={
+                    "amount": types.Schema(
+                        type=types.Type.NUMBER,
+                        description="Salario mensual en COP. Convierte: '2 millones' = 2000000, '1.5M' = 1500000"
+                    )
+                },
+                required=["amount"]
+            )
+        ),
+        
+        types.FunctionDeclaration(
+            name="add_extra_income",
+            description="Registra un ingreso extra (fuera del salario). Usa cuando digan 'me ingresaron X', 'vendí algo por X', 'me pagaron X'.",
+            parameters=types.Schema(
+                type=types.Type.OBJECT,
+                properties={
+                    "amount": types.Schema(
+                        type=types.Type.NUMBER,
+                        description="Monto del ingreso extra en COP"
+                    ),
+                    "description": types.Schema(
+                        type=types.Type.STRING,
+                        description="Descripción del ingreso (ej: 'venta de celular', 'freelance'). Opcional."
+                    )
+                },
+                required=["amount"]
+            )
+        ),
+        
+        types.FunctionDeclaration(
+            name="get_extra_incomes",
+            description="Lista todos los ingresos extras del mes con fecha y descripción. Usa cuando digan 'ver ingresos extras', 'qué extras he tenido'.",
+            parameters=types.Schema(
+                type=types.Type.OBJECT,
+                properties={
+                    "month": types.Schema(
+                        type=types.Type.INTEGER,
+                        description="Mes (1-12). Opcional, default mes actual"
+                    ),
+                    "year": types.Schema(
+                        type=types.Type.INTEGER,
+                        description="Año. Opcional, default año actual"
+                    )
+                },
+                required=[]
+            )
+        ),
+        
+        types.FunctionDeclaration(
+            name="get_income_summary",
+            description="Resumen de ingresos del mes: salario fijo + extras = total. Usa cuando pregunten 'cuánto he ganado', 'mis ingresos', 'resumen de ingresos'.",
+            parameters=types.Schema(
+                type=types.Type.OBJECT,
+                properties={
+                    "month": types.Schema(
+                        type=types.Type.INTEGER,
+                        description="Mes (1-12). Opcional"
+                    ),
+                    "year": types.Schema(
+                        type=types.Type.INTEGER,
+                        description="Año. Opcional"
+                    )
+                },
                 required=[]
             )
         )
@@ -428,6 +538,11 @@ async def execute_function(function_name: str, function_args: dict) -> str:
             result = mark_payment_done(recurring_id)
             return result["message"]
         
+        elif function_name == "unmark_bill_paid":
+            recurring_id = function_args.get("recurring_expense_id")
+            result = unmark_payment_done(recurring_id)
+            return result["message"]
+        
         # === NUEVAS FUNCIONES - MEJORAS ===
         elif function_name == "get_expenses_by_month":
             month = function_args.get("month")
@@ -450,14 +565,25 @@ async def execute_function(function_name: str, function_args: dict) -> str:
                 result = mark_payment_done(recurring_id)
                 return result["message"]
             else:
-                return f"❌ No encontré ningún gasto fijo con el nombre '{description}'. Usa /fijos o 'ver gastos fijos' para ver la lista completa."
+                return f"❌ No encontré ningún gasto fijo con el nombre '{description}'."
+        
+        elif function_name == "find_recurring_by_name_for_unmark":
+            description = function_args.get("description")
+            recurring_id = find_recurring_by_name(description)
+            
+            if recurring_id:
+                # Automáticamente desmarcar
+                result = unmark_payment_done(recurring_id)
+                return result["message"]
+            else:
+                return f"❌ No encontré ningún gasto fijo con el nombre '{description}'."
         
         # === FUNCIÓN OPTIMIZADA ===
         elif function_name == "get_financial_summary":
             budget = function_args.get("budget")
             return get_financial_summary(budget)
         
-        # === NUEVAS MEJORAS - METAS DE AHORRO ===
+        # === METAS DE AHORRO ===
         elif function_name == "add_savings_goal":
             result = add_savings_goal(
                 name=function_args.get("name"),
@@ -475,22 +601,43 @@ async def execute_function(function_name: str, function_args: dict) -> str:
             amount = function_args.get("amount")
             description = function_args.get("description", "")
             
-            # Buscar la meta por nombre
             goal_id = find_savings_goal_by_name(goal_name)
             
             if goal_id:
                 result = add_contribution_to_goal(goal_id, amount, description)
                 return result["message"]
             else:
-                return f"❌ No encontré ninguna meta con el nombre '{goal_name}'. Usa 'ver metas' para ver todas tus metas."
+                return f"❌ No encontré ninguna meta con el nombre '{goal_name}'."
         
-        # === NUEVAS MEJORAS - ANÁLISIS PREDICTIVO ===
+        # === ANÁLISIS PREDICTIVO ===
         elif function_name == "get_spending_prediction":
             category = function_args.get("category")
             return get_spending_prediction(category)
         
         elif function_name == "get_financial_insights":
             return get_financial_insights()
+        
+        # === INGRESOS ===
+        elif function_name == "set_fixed_salary":
+            amount = function_args.get("amount")
+            result = set_fixed_salary(amount)
+            return result["message"]
+        
+        elif function_name == "add_extra_income":
+            amount = function_args.get("amount")
+            description = function_args.get("description", "")
+            result = add_extra_income(amount, description)
+            return result["message"]
+        
+        elif function_name == "get_extra_incomes":
+            month = function_args.get("month")
+            year = function_args.get("year")
+            return get_extra_incomes(month, year)
+        
+        elif function_name == "get_income_summary":
+            month = function_args.get("month")
+            year = function_args.get("year")
+            return get_income_summary(month, year)
             
         else:
             logger.warning(f"⚠️ Función desconocida: {function_name}")
