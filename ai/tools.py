@@ -34,7 +34,12 @@ from database import (
     set_fixed_salary,
     add_extra_income,
     get_extra_incomes,
-    get_income_summary
+    get_income_summary,
+    # CRUD Imports
+    update_expense, delete_expense,
+    update_recurring_expense, delete_recurring_expense,
+    update_savings_goal, delete_savings_goal,
+    update_income, delete_income
 )
 
 # Definir las herramientas (Tools) para Gemini Function Calling
@@ -72,6 +77,33 @@ all_tools = types.Tool(
                 type=types.Type.OBJECT,
                 properties={},
                 required=[]
+            )
+        ),
+
+        types.FunctionDeclaration(
+            name="update_expense",
+            description="Actualiza un gasto existente. Necesitas el ID (que puedes ver en get_recent_expenses o get_expenses_by_day).",
+            parameters=types.Schema(
+                type=types.Type.OBJECT,
+                properties={
+                    "expense_id": types.Schema(type=types.Type.INTEGER, description="ID del gasto a actualizar"),
+                    "amount": types.Schema(type=types.Type.NUMBER, description="Nuevo monto (opcional)"),
+                    "description": types.Schema(type=types.Type.STRING, description="Nueva descripción (opcional)"),
+                    "category": types.Schema(type=types.Type.STRING, description="Nueva categoría (opcional)")
+                },
+                required=["expense_id"]
+            )
+        ),
+
+        types.FunctionDeclaration(
+            name="delete_expense",
+            description="Elimina un gasto por su ID. VERIFICA BIEN EL ID ANTES DE BORRAR.",
+            parameters=types.Schema(
+                type=types.Type.OBJECT,
+                properties={
+                    "expense_id": types.Schema(type=types.Type.INTEGER, description="ID del gasto a eliminar")
+                },
+                required=["expense_id"]
             )
         ),
         
@@ -164,6 +196,34 @@ all_tools = types.Tool(
                 type=types.Type.OBJECT,
                 properties={},
                 required=[]
+            )
+        ),
+
+        types.FunctionDeclaration(
+            name="update_recurring_expense",
+            description="Actualiza un gasto fijo existente. Requiere ID.",
+            parameters=types.Schema(
+                type=types.Type.OBJECT,
+                properties={
+                    "id": types.Schema(type=types.Type.INTEGER, description="ID del gasto fijo"),
+                    "description": types.Schema(type=types.Type.STRING, description="Nueva descripción (opcional)"),
+                    "amount": types.Schema(type=types.Type.NUMBER, description="Nuevo monto (opcional)"),
+                    "day_of_month": types.Schema(type=types.Type.INTEGER, description="Nuevo día de pago (opcional)"),
+                    "category": types.Schema(type=types.Type.STRING, description="Nueva categoría (opcional)")
+                },
+                required=["id"]
+            )
+        ),
+
+        types.FunctionDeclaration(
+            name="delete_recurring_expense",
+            description="Elimina (desactiva) un gasto fijo por su ID.",
+            parameters=types.Schema(
+                type=types.Type.OBJECT,
+                properties={
+                    "id": types.Schema(type=types.Type.INTEGER, description="ID del gasto fijo a eliminar")
+                },
+                required=["id"]
             )
         ),
         
@@ -348,6 +408,33 @@ all_tools = types.Tool(
                 required=[]
             )
         ),
+
+        types.FunctionDeclaration(
+            name="update_savings_goal",
+            description="Actualiza una meta de ahorro. Requiere ID.",
+            parameters=types.Schema(
+                type=types.Type.OBJECT,
+                properties={
+                    "id": types.Schema(type=types.Type.INTEGER, description="ID de la meta"),
+                    "name": types.Schema(type=types.Type.STRING, description="Nuevo nombre (opcional)"),
+                    "target_amount": types.Schema(type=types.Type.NUMBER, description="Nuevo monto objetivo (opcional)"),
+                    "deadline": types.Schema(type=types.Type.STRING, description="Nueva fecha límite YYYY-MM-DD (opcional)")
+                },
+                required=["id"]
+            )
+        ),
+
+        types.FunctionDeclaration(
+            name="delete_savings_goal",
+            description="Elimina una meta de ahorro por su ID.",
+            parameters=types.Schema(
+                type=types.Type.OBJECT,
+                properties={
+                    "id": types.Schema(type=types.Type.INTEGER, description="ID de la meta a eliminar")
+                },
+                required=["id"]
+            )
+        ),
         
         types.FunctionDeclaration(
             name="add_contribution_to_savings",
@@ -471,6 +558,32 @@ all_tools = types.Tool(
                 },
                 required=[]
             )
+        ),
+
+        types.FunctionDeclaration(
+            name="update_income",
+            description="Actualiza un ingreso (salario o extra). Requiere ID.",
+            parameters=types.Schema(
+                type=types.Type.OBJECT,
+                properties={
+                    "id": types.Schema(type=types.Type.INTEGER, description="ID del ingreso"),
+                    "amount": types.Schema(type=types.Type.NUMBER, description="Nuevo monto (opcional)"),
+                    "description": types.Schema(type=types.Type.STRING, description="Nueva descripción (opcional)")
+                },
+                required=["id"]
+            )
+        ),
+
+        types.FunctionDeclaration(
+            name="delete_income",
+            description="Elimina un ingreso (salario o extra) por su ID.",
+            parameters=types.Schema(
+                type=types.Type.OBJECT,
+                properties={
+                    "id": types.Schema(type=types.Type.INTEGER, description="ID del ingreso a eliminar")
+                },
+                required=["id"]
+            )
         )
     ]
 )
@@ -494,6 +607,17 @@ async def execute_function(function_name: str, function_args: dict) -> str:
             
         elif function_name == "get_recent_expenses":
             return get_recent_expenses()
+            
+        elif function_name == "update_expense":
+            return update_expense(
+                expense_id=function_args.get("expense_id"),
+                amount=function_args.get("amount"),
+                description=function_args.get("description"),
+                category=function_args.get("category")
+            )["message"]
+            
+        elif function_name == "delete_expense":
+            return delete_expense(expense_id=function_args.get("expense_id"))["message"]
         
         # === CONSULTAS POR PERÍODO ===
         elif function_name == "get_expenses_by_day":
@@ -523,6 +647,18 @@ async def execute_function(function_name: str, function_args: dict) -> str:
         
         elif function_name == "get_recurring_expenses":
             return get_recurring_expenses()
+
+        elif function_name == "update_recurring_expense":
+            return update_recurring_expense(
+                id=function_args.get("id"),
+                description=function_args.get("description"),
+                amount=function_args.get("amount"),
+                day_of_month=function_args.get("day_of_month"),
+                category=function_args.get("category")
+            )["message"]
+            
+        elif function_name == "delete_recurring_expense":
+            return delete_recurring_expense(id=function_args.get("id"))["message"]
         
         elif function_name == "get_pending_payments":
             return get_pending_payments()
@@ -595,6 +731,17 @@ async def execute_function(function_name: str, function_args: dict) -> str:
         
         elif function_name == "get_savings_goals":
             return get_savings_goals()
+
+        elif function_name == "update_savings_goal":
+            return update_savings_goal(
+                id=function_args.get("id"),
+                name=function_args.get("name"),
+                target_amount=function_args.get("target_amount"),
+                deadline=function_args.get("deadline")
+            )["message"]
+            
+        elif function_name == "delete_savings_goal":
+            return delete_savings_goal(id=function_args.get("id"))["message"]
         
         elif function_name == "add_contribution_to_savings":
             goal_name = function_args.get("goal_name")
@@ -638,6 +785,16 @@ async def execute_function(function_name: str, function_args: dict) -> str:
             month = function_args.get("month")
             year = function_args.get("year")
             return get_income_summary(month, year)
+
+        elif function_name == "update_income":
+            return update_income(
+                id=function_args.get("id"),
+                amount=function_args.get("amount"),
+                description=function_args.get("description")
+            )["message"]
+            
+        elif function_name == "delete_income":
+            return delete_income(id=function_args.get("id"))["message"]
             
         else:
             logger.warning(f"⚠️ Función desconocida: {function_name}")

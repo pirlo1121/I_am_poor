@@ -23,6 +23,8 @@ load_dotenv()
 TELEGRAM_TOKEN: Final = os.getenv("TELEGRAM_BOT_TOKEN", "")
 CHATGPT_API_KEY: Final = os.getenv("CHATGPT_API_KEY", "")
 GEMINI_API_KEY: Final = os.getenv("GEMINI_API_KEY", "")
+SUPABASE_URL: Final = os.getenv("SUPABASE_URL", "")
+SUPABASE_KEY: Final = os.getenv("SUPABASE_KEY", "")
 
 # Validar Telegram token
 if not TELEGRAM_TOKEN:
