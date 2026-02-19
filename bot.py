@@ -4,7 +4,7 @@ Bot que interpreta lenguaje natural usando Gemini Pro/ChatGPT para registrar gas
 y consultar información financiera en una base de datos PostgreSQL (Supabase).
 """
 
-from datetime import time
+from datetime import time, timezone, timedelta
 from telegram import Update
 from telegram.ext import (
     Application,
@@ -119,10 +119,11 @@ def main() -> None:
     
     if job_queue is not None:
         # Recordatorio diario de facturas a las 8:00 AM (hora local Colombia UTC-5)
+        colombia_tz = timezone(timedelta(hours=-5))
         if REMINDER_CHAT_ID:
             job_queue.run_daily(
                 send_bill_reminders,
-                time=time(hour=8, minute=0, second=0),
+                time=time(hour=8, minute=0, second=0, tzinfo=colombia_tz),
                 name="bill_reminders"
             )
             logger.info("⏰ Recordatorio diario de facturas programado (8:00 AM)")
