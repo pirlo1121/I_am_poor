@@ -3,6 +3,7 @@ Handler de mensajes de usuario con integración de AI.
 """
 
 import json
+import traceback
 from telegram import Update
 from telegram.ext import ContextTypes
 from google.genai import types
@@ -11,6 +12,10 @@ from ai.providers import generate_ai_response
 from ai.prompts import SYSTEM_INSTRUCTION
 from ai.tools import execute_function
 from core.session_manager import get_or_create_session, clear_session, MAX_HISTORY_MESSAGES, user_sessions
+from utils import RateLimiter
+
+# Rate limiter global: máx 10 mensajes por minuto por usuario
+_rate_limiter = RateLimiter(max_requests=10, window_seconds=60)
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE, user_text: str = None) -> None:
@@ -26,6 +31,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE, use
     # Usar el texto proporcionado o el texto del mensaje
     user_message = user_text if user_text is not None else update.message.text
     user_id = update.effective_user.id
+    
+    # Rate limiting
+    if not _rate_limiter.is_allowed(user_id):
+        wait_time = _rate_limiter.get_wait_time(user_id)
+        await update.message.reply_text(
+            f"⏳ Estás enviando mensajes muy rápido. Espera {wait_time:.0f} segundos."
+        )
+        return
     
     logger.info(f"Usuario {user_id}: {user_message}")
     
@@ -44,7 +57,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE, use
         
     except Exception as e:
         logger.error(f"❌ Error procesando mensaje (user_id={user_id}): {e}")
-        import traceback
         error_traceback = traceback.format_exc()
         logger.error(error_traceback)
         
@@ -298,7 +310,6 @@ async def handle_voice_message(update: Update, context: ContextTypes.DEFAULT_TYP
         
     except Exception as e:
         logger.error(f"❌ Error procesando mensaje de voz (user {user_id}): {e}")
-        import traceback
         logger.error(traceback.format_exc())
         
         await update.message.reply_text(

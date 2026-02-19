@@ -25,6 +25,7 @@ CHATGPT_API_KEY: Final = os.getenv("CHATGPT_API_KEY", "")
 GEMINI_API_KEY: Final = os.getenv("GEMINI_API_KEY", "")
 SUPABASE_URL: Final = os.getenv("SUPABASE_URL", "")
 SUPABASE_KEY: Final = os.getenv("SUPABASE_KEY", "")
+REMINDER_CHAT_ID: Final = os.getenv("REMINDER_CHAT_ID", "")  # Chat ID for bill reminders
 
 # Validar Telegram token
 if not TELEGRAM_TOKEN:

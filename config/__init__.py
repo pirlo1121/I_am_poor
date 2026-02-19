@@ -3,11 +3,11 @@ from .settings import (
     TELEGRAM_TOKEN,
     AI_PROVIDER,
     logger,
-    logger,
     gemini_client,
     openai,
     SUPABASE_URL,
-    SUPABASE_KEY
+    SUPABASE_KEY,
+    REMINDER_CHAT_ID
 )
 
 __all__ = [
@@ -17,5 +17,6 @@ __all__ = [
     'gemini_client',
     'openai',
     'SUPABASE_URL',
-    'SUPABASE_KEY'
+    'SUPABASE_KEY',
+    'REMINDER_CHAT_ID'
 ]

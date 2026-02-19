@@ -93,7 +93,7 @@ CREATE TABLE IF NOT EXISTS ingresos (
   id BIGSERIAL PRIMARY KEY,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   amount FLOAT NOT NULL,
-  type TEXT NOT NULL CHECK (type IN ('salario', 'extra')),
+  type TEXT NOT NULL CHECK (type IN ('salary', 'extra')),
   description TEXT,
   month INTEGER NOT NULL CHECK (month >= 1 AND month <= 12),
   year INTEGER NOT NULL CHECK (year >= 2020)

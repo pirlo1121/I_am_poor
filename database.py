@@ -1,4 +1,5 @@
 import os
+import functools
 from typing import Dict, List, Optional, Any
 from datetime import datetime, timedelta
 import calendar
@@ -32,6 +33,7 @@ def safe_db_operation(operation: str) -> Dict:
     Executa una función y maneja excepciones estándar.
     """
     def decorator(func):
+        @functools.wraps(func)
         def wrapper(*args, **kwargs):
             try:
                 return func(*args, **kwargs)
@@ -346,11 +348,10 @@ def mark_payment_done(recurring_id: int) -> Dict:
         
     if check.data: return {"success": True, "message": f"✅ Ya estaba marcado como pagado: {rec.data['description']}"}
     
-    # Registrar pago
+    # Registrar pago (paid_at se maneja con DEFAULT NOW() en el schema)
     data = {
         "gasto_fijo_id": recurring_id,
         "amount": rec.data['amount'],
-        "payment_date": now.strftime("%Y-%m-%d"),
         "month": now.month,
         "year": now.year
     }
@@ -542,8 +543,26 @@ def get_income_summary(month: int = None, year: int = None) -> str:
         return f"❌ Error: {e}"
 
 def get_extra_incomes(month: int = None, year: int = None) -> str:
-    # Similar logic... simplificado por brevedad
-    return get_income_summary(month, year) # Reutilizando para demo, idealmente listaría detalles
+    """Lista detallada de ingresos extras del mes."""
+    try:
+        now = datetime.now()
+        m = month or now.month
+        y = year or now.year
+        client = get_supabase_client()
+        
+        extras = client.table("ingresos").select("*").eq("month", m).eq("year", y).eq("type", "extra").order("created_at", desc=True).execute().data
+        if not extras:
+            return f"📭 No hay ingresos extras registrados en {m}/{y}."
+        
+        total = sum(e['amount'] for e in extras)
+        result = f"💸 **Ingresos Extras {m}/{y}:**\n\n"
+        for idx, e in enumerate(extras, 1):
+            date_str = e.get("created_at", "").split("T")[0]
+            result += f"{idx}. ${e['amount']:,.0f} - {e.get('description', 'Sin descripción')} ({date_str})\n"
+        result += f"\n💰 **Total extras: ${total:,.0f}**"
+        return result
+    except Exception as e:
+        return f"❌ Error: {e}"
 
 @safe_db_operation("actualizar ingreso")
 def update_income(id: int, amount: float = None, description: str = None) -> Dict:
@@ -583,10 +602,318 @@ def get_financial_summary(budget: float = None) -> str:
     except Exception as e:
         return f"❌ Error: {e}"
 
-# Placeholder legacy exports
-def get_expenses_by_category(cat): return "Función en mantenimiento/optimización"
-def get_paid_payments(): return "Función en mantenimiento"
-def get_all_monthly_bills(): return "Función en mantenimiento"
-def get_spending_prediction(cat=None): return "🔮 Predicción próximamente..."
-def get_financial_insights(): return "💡 Insights próximamente..."
-def compare_monthly_expenses(m1,y1,m2,y2): return "⚖️ Comparador próximamente..."
+# ============================================
+# CONSULTAS AVANZADAS
+# ============================================
+
+def get_expenses_by_category(cat: str) -> str:
+    """Gastos de una categoría específica en el mes actual."""
+    try:
+        now = datetime.now()
+        _, last_day = calendar.monthrange(now.year, now.month)
+        start = f"{now.year}-{now.month:02d}-01T00:00:00"
+        end = f"{now.year}-{now.month:02d}-{last_day}T23:59:59"
+        
+        client = get_supabase_client()
+        response = client.table("gastos").select("*")\
+            .eq("category", cat.lower())\
+            .gte("created_at", start).lte("created_at", end)\
+            .order("created_at", desc=True).execute()
+        
+        if not response.data:
+            return f"📭 No hay gastos en '{cat}' este mes ({now.month}/{now.year})."
+        
+        total = sum(e['amount'] for e in response.data)
+        result = f"📊 **Gastos en {cat.title()} ({now.month}/{now.year}):**\n\n"
+        for e in response.data:
+            date_str = e.get("created_at", "").split("T")[0]
+            result += f"• ${e['amount']:,.0f} - {e['description']} ({date_str})\n"
+        result += f"\n💰 **Total: ${total:,.0f}** ({len(response.data)} gastos)"
+        return result
+    except Exception as e:
+        return f"❌ Error: {e}"
+
+
+def get_paid_payments() -> str:
+    """Facturas ya pagadas del mes actual."""
+    try:
+        now = datetime.now()
+        client = get_supabase_client()
+        
+        paid = client.table("pagos_realizados").select("*, gastos_fijos(description, amount, day_of_month)")\
+            .eq("month", now.month).eq("year", now.year).execute().data
+        
+        if not paid:
+            return "📭 No has pagado ninguna factura este mes."
+        
+        result = "✅ **Facturas Pagadas este mes:**\n\n"
+        total = 0
+        for p in paid:
+            gf = p.get('gastos_fijos', {})
+            desc = gf.get('description', 'Desconocido') if gf else 'Desconocido'
+            amt = p.get('amount', 0)
+            date_str = p.get('paid_at', '').split('T')[0] if p.get('paid_at') else ''
+            result += f"• ✅ {desc} - ${amt:,.0f} (pagado: {date_str})\n"
+            total += amt
+        
+        result += f"\n💰 **Total pagado: ${total:,.0f}**"
+        return result
+    except Exception as e:
+        return f"❌ Error: {e}"
+
+
+def get_all_monthly_bills() -> str:
+    """Vista completa de todas las mensualidades: pagadas + pendientes."""
+    try:
+        now = datetime.now()
+        client = get_supabase_client()
+        
+        # Gastos fijos activos
+        recurring = client.table("gastos_fijos").select("*").eq("active", True).order("day_of_month").execute().data
+        if not recurring:
+            return "📋 No tienes gastos fijos configurados."
+        
+        # Pagos realizados este mes
+        paid = client.table("pagos_realizados").select("gasto_fijo_id, paid_at")\
+            .eq("month", now.month).eq("year", now.year).execute().data
+        paid_map = {p['gasto_fijo_id']: p.get('paid_at', '').split('T')[0] for p in paid}
+        
+        total_fijo = 0
+        total_pagado = 0
+        result = f"📋 **Mensualidades {now.month}/{now.year}:**\n\n"
+        
+        for r in recurring:
+            is_paid = r['id'] in paid_map
+            status = "✅" if is_paid else "⏰"
+            extra = f" (pagado: {paid_map[r['id']]})" if is_paid else f" (vence día {r['day_of_month']})"
+            result += f"{status} {r['description']} - ${r['amount']:,.0f}{extra}\n"
+            total_fijo += r['amount']
+            if is_paid:
+                total_pagado += r['amount']
+        
+        pendiente = total_fijo - total_pagado
+        result += f"\n💰 Total fijo: ${total_fijo:,.0f}\n"
+        result += f"✅ Pagado: ${total_pagado:,.0f}\n"
+        result += f"⏰ Pendiente: ${pendiente:,.0f}"
+        return result
+    except Exception as e:
+        return f"❌ Error: {e}"
+
+
+def get_spending_prediction(cat: str = None) -> str:
+    """Proyecta gastos del mes basándose en promedio de últimos 3 meses."""
+    try:
+        now = datetime.now()
+        client = get_supabase_client()
+        
+        # Recopilar datos de los últimos 3 meses
+        monthly_totals = []
+        for i in range(1, 4):
+            m = now.month - i
+            y = now.year
+            if m <= 0:
+                m += 12
+                y -= 1
+            _, last_day = calendar.monthrange(y, m)
+            start = f"{y}-{m:02d}-01T00:00:00"
+            end = f"{y}-{m:02d}-{last_day}T23:59:59"
+            
+            query = client.table("gastos").select("amount")
+            if cat:
+                query = query.eq("category", cat.lower())
+            data = query.gte("created_at", start).lte("created_at", end).execute().data
+            total = sum(e['amount'] for e in data) if data else 0
+            monthly_totals.append({"month": m, "year": y, "total": total})
+        
+        if not any(t['total'] > 0 for t in monthly_totals):
+            return "📭 No hay datos suficientes para predecir (se necesita al menos 1 mes previo)."
+        
+        avg = sum(t['total'] for t in monthly_totals) / len(monthly_totals)
+        
+        # Gastos actuales del mes
+        _, last_day_now = calendar.monthrange(now.year, now.month)
+        start_now = f"{now.year}-{now.month:02d}-01T00:00:00"
+        end_now = f"{now.year}-{now.month:02d}-{last_day_now}T23:59:59"
+        query_now = client.table("gastos").select("amount")
+        if cat:
+            query_now = query_now.eq("category", cat.lower())
+        current_data = query_now.gte("created_at", start_now).lte("created_at", end_now).execute().data
+        current_total = sum(e['amount'] for e in current_data) if current_data else 0
+        
+        # Proyección lineal
+        days_passed = now.day
+        days_in_month = last_day_now
+        projected = (current_total / days_passed * days_in_month) if days_passed > 0 else 0
+        
+        cat_label = f" en {cat.title()}" if cat else ""
+        result = f"🔮 **Proyección de Gastos{cat_label}:**\n\n"
+        result += f"📊 Promedio últimos 3 meses: ${avg:,.0f}\n"
+        for t in monthly_totals:
+            result += f"   • {t['month']}/{t['year']}: ${t['total']:,.0f}\n"
+        result += f"\n📅 Mes actual (día {days_passed}/{days_in_month}): ${current_total:,.0f}\n"
+        result += f"🔮 Proyectado fin de mes: ${projected:,.0f}\n"
+        
+        if projected > avg * 1.2:
+            result += "\n⚠️ Vas un 20%+ por encima del promedio. ¡Cuidado!"
+        elif projected < avg * 0.8:
+            result += "\n🎉 Vas por debajo del promedio. ¡Buen trabajo!"
+        else:
+            result += "\n📈 Vas en línea con tu promedio habitual."
+        
+        return result
+    except Exception as e:
+        return f"❌ Error: {e}"
+
+
+def get_financial_insights() -> str:
+    """Genera insights y análisis financieros automáticos."""
+    try:
+        now = datetime.now()
+        client = get_supabase_client()
+        
+        # Datos del mes actual
+        _, last_day = calendar.monthrange(now.year, now.month)
+        start = f"{now.year}-{now.month:02d}-01T00:00:00"
+        end = f"{now.year}-{now.month:02d}-{last_day}T23:59:59"
+        
+        expenses = client.table("gastos").select("amount, category").gte("created_at", start).lte("created_at", end).execute().data
+        
+        if not expenses:
+            return "📭 No hay datos suficientes para generar insights este mes."
+        
+        # Análisis por categoría
+        cats = {}
+        total = 0
+        for e in expenses:
+            c = e['category']
+            cats[c] = cats.get(c, 0) + e['amount']
+            total += e['amount']
+        
+        top_cat = max(cats, key=cats.get)
+        top_amount = cats[top_cat]
+        top_pct = (top_amount / total * 100) if total > 0 else 0
+        
+        # Mes anterior para comparación
+        prev_m = now.month - 1
+        prev_y = now.year
+        if prev_m <= 0:
+            prev_m = 12
+            prev_y -= 1
+        _, prev_last_day = calendar.monthrange(prev_y, prev_m)
+        prev_start = f"{prev_y}-{prev_m:02d}-01T00:00:00"
+        prev_end = f"{prev_y}-{prev_m:02d}-{prev_last_day}T23:59:59"
+        prev_expenses = client.table("gastos").select("amount").gte("created_at", prev_start).lte("created_at", prev_end).execute().data
+        prev_total = sum(e['amount'] for e in prev_expenses) if prev_expenses else 0
+        
+        # Facturas pendientes
+        recurring = client.table("gastos_fijos").select("id, amount").eq("active", True).execute().data or []
+        paid = client.table("pagos_realizados").select("gasto_fijo_id").eq("month", now.month).eq("year", now.year).execute().data or []
+        paid_ids = {p['gasto_fijo_id'] for p in paid}
+        pending_bills = [r for r in recurring if r['id'] not in paid_ids]
+        pending_amount = sum(r['amount'] for r in pending_bills)
+        
+        # Ingresos
+        incomes = client.table("ingresos").select("amount").eq("month", now.month).eq("year", now.year).execute().data or []
+        total_income = sum(i['amount'] for i in incomes)
+        
+        result = f"💡 **Insights Financieros - {now.month}/{now.year}:**\n\n"
+        result += f"📊 **Gastos totales:** ${total:,.0f} ({len(expenses)} transacciones)\n"
+        result += f"🏆 **Mayor gasto:** {top_cat.title()} con ${top_amount:,.0f} ({top_pct:.0f}%)\n"
+        
+        if prev_total > 0:
+            diff = total - prev_total
+            pct_diff = (diff / prev_total * 100)
+            emoji = "📈" if diff > 0 else "📉"
+            result += f"{emoji} **vs. mes anterior:** {'+'if diff > 0 else ''}${diff:,.0f} ({pct_diff:+.1f}%)\n"
+        
+        if total_income > 0:
+            savings_rate = ((total_income - total - pending_amount) / total_income * 100)
+            result += f"\n💰 **Ingresos:** ${total_income:,.0f}\n"
+            result += f"💸 **Gasto total + pendientes:** ${total + pending_amount:,.0f}\n"
+            result += f"📊 **Tasa de ahorro estimada:** {savings_rate:.1f}%\n"
+        
+        if pending_bills:
+            result += f"\n⚠️ **{len(pending_bills)} facturas pendientes** por ${pending_amount:,.0f}"
+        else:
+            result += "\n🎉 ¡Todas las facturas del mes están pagadas!"
+        
+        return result
+    except Exception as e:
+        return f"❌ Error: {e}"
+
+
+def compare_monthly_expenses(m1: int, y1: int, m2: int, y2: int) -> str:
+    """Compara gastos entre dos meses por total y por categoría."""
+    try:
+        client = get_supabase_client()
+        
+        def get_month_data(month, year):
+            _, last_day = calendar.monthrange(year, month)
+            start = f"{year}-{month:02d}-01T00:00:00"
+            end = f"{year}-{month:02d}-{last_day}T23:59:59"
+            data = client.table("gastos").select("amount, category").gte("created_at", start).lte("created_at", end).execute().data or []
+            total = sum(e['amount'] for e in data)
+            cats = {}
+            for e in data:
+                c = e['category']
+                cats[c] = cats.get(c, 0) + e['amount']
+            return total, cats, len(data)
+        
+        t1, c1, n1 = get_month_data(int(m1), int(y1))
+        t2, c2, n2 = get_month_data(int(m2), int(y2))
+        
+        diff = t2 - t1
+        pct = (diff / t1 * 100) if t1 > 0 else 0
+        emoji = "📈" if diff > 0 else "📉" if diff < 0 else "➡️"
+        
+        result = f"⚖️ **Comparación {m1}/{y1} vs {m2}/{y2}:**\n\n"
+        result += f"📅 {m1}/{y1}: ${t1:,.0f} ({n1} gastos)\n"
+        result += f"📅 {m2}/{y2}: ${t2:,.0f} ({n2} gastos)\n"
+        result += f"{emoji} Diferencia: {'+'if diff > 0 else ''}${diff:,.0f} ({pct:+.1f}%)\n\n"
+        
+        # Comparar por categoría
+        all_cats = set(list(c1.keys()) + list(c2.keys()))
+        if all_cats:
+            result += "📊 **Por categoría:**\n"
+            for cat in sorted(all_cats):
+                v1 = c1.get(cat, 0)
+                v2 = c2.get(cat, 0)
+                cat_diff = v2 - v1
+                cat_emoji = "🔺" if cat_diff > 0 else "🔻" if cat_diff < 0 else "➡️"
+                result += f"{cat_emoji} {cat.title()}: ${v1:,.0f} → ${v2:,.0f} ({'+'if cat_diff > 0 else ''}${cat_diff:,.0f})\n"
+        
+        return result
+    except Exception as e:
+        return f"❌ Error: {e}"
+
+
+# ============================================
+# RECORDATORIOS
+# ============================================
+
+def check_upcoming_bills(days_ahead: int = 1) -> list:
+    """
+    Verifica qué facturas vencen en los próximos X días.
+    Retorna lista de bills para enviar recordatorios.
+    """
+    try:
+        now = datetime.now()
+        target_day = (now + timedelta(days=days_ahead)).day
+        
+        client = get_supabase_client()
+        
+        # Gastos fijos que vencen ese día
+        recurring = client.table("gastos_fijos").select("*").eq("active", True).eq("day_of_month", target_day).execute().data
+        if not recurring:
+            return []
+        
+        # Verificar cuáles NO están pagados este mes
+        paid = client.table("pagos_realizados").select("gasto_fijo_id")\
+            .eq("month", now.month).eq("year", now.year).execute().data
+        paid_ids = {p['gasto_fijo_id'] for p in paid} if paid else set()
+        
+        unpaid = [r for r in recurring if r['id'] not in paid_ids]
+        return unpaid
+    except Exception as e:
+        logger.error(f"❌ Error checking upcoming bills: {e}")
+        return []
