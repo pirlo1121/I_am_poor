@@ -104,7 +104,23 @@ CREATE INDEX IF NOT EXISTS idx_ingresos_type ON ingresos(type);
 CREATE INDEX IF NOT EXISTS idx_ingresos_month_year ON ingresos(month, year);
 
 -- ============================================
--- 7. VERIFICAR TABLAS CREADAS
+-- 7. CREAR TABLA RECORDATORIOS PERSONALIZADOS
+-- ============================================
+CREATE TABLE IF NOT EXISTS reminders (
+  id BIGSERIAL PRIMARY KEY,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  message TEXT NOT NULL,
+  remind_at TIMESTAMPTZ NOT NULL,
+  chat_id TEXT NOT NULL,
+  sent BOOLEAN DEFAULT FALSE
+);
+
+-- Índices para búsquedas rápidas de recordatorios pendientes
+CREATE INDEX IF NOT EXISTS idx_reminders_sent ON reminders(sent);
+CREATE INDEX IF NOT EXISTS idx_reminders_remind_at ON reminders(remind_at);
+
+-- ============================================
+-- 8. VERIFICAR TABLAS CREADAS
 -- ============================================
 SELECT 'Tablas creadas exitosamente!' as status;
 

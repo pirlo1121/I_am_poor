@@ -917,3 +917,58 @@ def check_upcoming_bills(days_ahead: int = 1) -> list:
     except Exception as e:
         logger.error(f"❌ Error checking upcoming bills: {e}")
         return []
+
+
+# ============================================
+# RECORDATORIOS PERSONALIZADOS
+# ============================================
+
+@safe_db_operation("crear recordatorio")
+def add_reminder(message: str, remind_at: str, chat_id: str) -> Dict:
+    """Crea un recordatorio personalizado."""
+    client = get_supabase_client()
+    data = {
+        "message": message.strip(),
+        "remind_at": remind_at,
+        "chat_id": str(chat_id),
+        "sent": False
+    }
+    client.table("reminders").insert(data).execute()
+    
+    # Formatear fecha para confirmación
+    try:
+        from datetime import datetime as dt
+        remind_dt = dt.fromisoformat(remind_at.replace("Z", "+00:00"))
+        fecha_str = remind_dt.strftime("%d/%m/%Y a las %H:%M")
+    except:
+        fecha_str = remind_at
+    
+    return {"success": True, "message": f"⏰ Recordatorio creado: '{message}' para el {fecha_str}"}
+
+
+def get_due_reminders() -> list:
+    """Obtiene recordatorios cuya hora ya llegó y no han sido enviados."""
+    try:
+        now = datetime.now().isoformat()
+        client = get_supabase_client()
+        
+        response = client.table("reminders").select("*")\
+            .eq("sent", False)\
+            .lte("remind_at", now)\
+            .execute()
+        
+        return response.data if response.data else []
+    except Exception as e:
+        logger.error(f"❌ Error getting due reminders: {e}")
+        return []
+
+
+def delete_reminder(reminder_id: int) -> bool:
+    """Elimina un recordatorio de la BD (después de enviarlo)."""
+    try:
+        client = get_supabase_client()
+        client.table("reminders").delete().eq("id", reminder_id).execute()
+        return True
+    except Exception as e:
+        logger.error(f"❌ Error deleting reminder {reminder_id}: {e}")
+        return False

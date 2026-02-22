@@ -24,7 +24,7 @@ from handlers import (
     handle_message,
     handle_voice_message
 )
-from database import check_upcoming_bills
+from database import check_upcoming_bills, get_due_reminders, delete_reminder
 from core.session_manager import user_sessions
 
 
@@ -87,6 +87,43 @@ async def cleanup_inactive_sessions(context) -> None:
         logger.info(f"🧹 Limpiadas {count} sesiones inactivas")
 
 
+async def send_custom_reminders(context) -> None:
+    """
+    Job periódico: verifica recordatorios personalizados que ya llegaron a su hora
+    y los envía. Se ejecuta cada 60 segundos.
+    Los recordatorios se eliminan de la BD después de enviarse.
+    """
+    try:
+        due_reminders = get_due_reminders()
+        
+        if not due_reminders:
+            return
+        
+        for reminder in due_reminders:
+            try:
+                chat_id = reminder.get('chat_id')
+                message = reminder.get('message', 'Recordatorio')
+                reminder_id = reminder.get('id')
+                
+                msg = f"⏰ **Recordatorio**\n\n📌 {message}"
+                
+                await context.bot.send_message(
+                    chat_id=int(chat_id),
+                    text=msg,
+                    parse_mode='Markdown'
+                )
+                
+                # Eliminar recordatorio después de enviarlo
+                delete_reminder(reminder_id)
+                logger.info(f"📨 Recordatorio enviado y eliminado: '{message}' (ID: {reminder_id})")
+                
+            except Exception as e:
+                logger.error(f"❌ Error enviando recordatorio {reminder.get('id')}: {e}")
+        
+    except Exception as e:
+        logger.error(f"❌ Error en job de recordatorios personalizados: {e}")
+
+
 def main() -> None:
     """
     Función principal - Inicializa y ejecuta el bot.
@@ -137,6 +174,15 @@ def main() -> None:
             first=3600,     # Primera ejecución en 1 hora
             name="session_cleanup"
         )
+        
+        # Recordatorios personalizados cada 60 segundos
+        job_queue.run_repeating(
+            send_custom_reminders,
+            interval=60,    # Cada 60 segundos
+            first=10,       # Primera ejecución en 10 segundos
+            name="custom_reminders"
+        )
+        logger.info("⏰ Job de recordatorios personalizados programado (cada 60s)")
     else:
         logger.warning("⚠️ JobQueue no disponible. Instala con: pip install 'python-telegram-bot[job-queue]'")
     

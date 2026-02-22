@@ -39,7 +39,9 @@ from database import (
     update_expense, delete_expense,
     update_recurring_expense, delete_recurring_expense,
     update_savings_goal, delete_savings_goal,
-    update_income, delete_income
+    update_income, delete_income,
+    # Recordatorios personalizados
+    add_reminder
 )
 
 # Definir las herramientas (Tools) para Gemini Function Calling
@@ -584,6 +586,26 @@ all_tools = types.Tool(
                 },
                 required=["id"]
             )
+        ),
+        
+        # === RECORDATORIOS PERSONALIZADOS ===
+        types.FunctionDeclaration(
+            name="add_reminder",
+            description="Crea un recordatorio personalizado. Usa cuando digan 'recuérdame X', 'avísame X', 'recordatorio para X'. El mensaje se enviará en la fecha/hora indicada y luego se elimina automáticamente.",
+            parameters=types.Schema(
+                type=types.Type.OBJECT,
+                properties={
+                    "message": types.Schema(
+                        type=types.Type.STRING,
+                        description="Mensaje del recordatorio (ej: 'Debes agendar clases de inglés')"
+                    ),
+                    "remind_at": types.Schema(
+                        type=types.Type.STRING,
+                        description="Fecha y hora en formato ISO 8601 (ej: '2026-02-23T16:00:00'). Calcula la fecha/hora a partir de lo que diga el usuario (ej: 'mañana a las 4 PM', 'el viernes a las 10 AM'). Si no especifica hora, usa 09:00."
+                    )
+                },
+                required=["message", "remind_at"]
+            )
         )
     ]
 )
@@ -795,6 +817,16 @@ async def execute_function(function_name: str, function_args: dict) -> str:
             
         elif function_name == "delete_income":
             return delete_income(id=function_args.get("id"))["message"]
+        
+        # === RECORDATORIOS PERSONALIZADOS ===
+        elif function_name == "add_reminder":
+            from config import REMINDER_CHAT_ID
+            message = function_args.get("message")
+            remind_at = function_args.get("remind_at")
+            # Usar REMINDER_CHAT_ID como chat_id por defecto
+            chat_id = REMINDER_CHAT_ID
+            result = add_reminder(message=message, remind_at=remind_at, chat_id=chat_id)
+            return result["message"]
             
         else:
             logger.warning(f"⚠️ Función desconocida: {function_name}")
