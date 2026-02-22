@@ -3,11 +3,14 @@
 Módulo de prompts para configurar el comportamiento de la IA.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+
+# Zona horaria de Colombia (UTC-5)
+COLOMBIA_TZ = timezone(timedelta(hours=-5))
 
 def get_system_instruction():
-    """Genera el system instruction con la fecha actual."""
-    now = datetime.now()
+    """Genera el system instruction con la fecha actual (hora Colombia)."""
+    now = datetime.now(COLOMBIA_TZ)
     current_date = now.strftime("%Y-%m-%d")
     current_time = now.strftime("%H:%M")
     day_name = now.strftime("%A")

@@ -86,7 +86,7 @@ async def _process_chatgpt_response(response, user_message: str, user_id: int, u
             logger.info(f"🤖 ChatGPT llama a función: {function_name} con args: {function_args}")
             
             # Ejecutar función y obtener resultado
-            function_result = await execute_function(function_name, function_args)
+            function_result = await execute_function(function_name, function_args, chat_id=str(update.effective_chat.id))
             function_results.append({
                 "tool_call_id": tool_call.id,
                 "role": "tool",
@@ -168,7 +168,7 @@ async def _process_gemini_response(response, chat_session, update: Update):
                 logger.info(f"🤖 Gemini llama a función: {function_name} con args: {function_args}")
                 
                 # Ejecutar función y guardar resultado
-                function_result = await execute_function(function_name, function_args)
+                function_result = await execute_function(function_name, function_args, chat_id=str(update.effective_chat.id))
                 function_calls_found.append({
                     "name": function_name,
                     "result": function_result

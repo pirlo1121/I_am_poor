@@ -1,10 +1,13 @@
 import os
 import functools
 from typing import Dict, List, Optional, Any
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import calendar
 from supabase import create_client, Client
 from config import logger, SUPABASE_URL, SUPABASE_KEY
+
+# Zona horaria de Colombia (UTC-5)
+COLOMBIA_TZ = timezone(timedelta(hours=-5))
 
 # ============================================
 # CONFIGURACIÓN GLOBAL
@@ -897,7 +900,7 @@ def check_upcoming_bills(days_ahead: int = 1) -> list:
     Retorna lista de bills para enviar recordatorios.
     """
     try:
-        now = datetime.now()
+        now = datetime.now(COLOMBIA_TZ)
         target_day = (now + timedelta(days=days_ahead)).day
         
         client = get_supabase_client()
@@ -949,7 +952,7 @@ def add_reminder(message: str, remind_at: str, chat_id: str) -> Dict:
 def get_due_reminders() -> list:
     """Obtiene recordatorios cuya hora ya llegó y no han sido enviados."""
     try:
-        now = datetime.now().isoformat()
+        now = datetime.now(COLOMBIA_TZ).isoformat()
         client = get_supabase_client()
         
         response = client.table("reminders").select("*")\

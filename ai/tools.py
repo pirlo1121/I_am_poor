@@ -611,7 +611,7 @@ all_tools = types.Tool(
 )
 
 
-async def execute_function(function_name: str, function_args: dict) -> str:
+async def execute_function(function_name: str, function_args: dict, chat_id: str = None) -> str:
     """
     Ejecuta la función correspondiente y RETORNA el resultado como string.
     La respuesta será procesada por la IA para generar una respuesta natural.
@@ -820,12 +820,13 @@ async def execute_function(function_name: str, function_args: dict) -> str:
         
         # === RECORDATORIOS PERSONALIZADOS ===
         elif function_name == "add_reminder":
-            from config import REMINDER_CHAT_ID
             message = function_args.get("message")
             remind_at = function_args.get("remind_at")
-            # Usar REMINDER_CHAT_ID como chat_id por defecto
-            chat_id = REMINDER_CHAT_ID
-            result = add_reminder(message=message, remind_at=remind_at, chat_id=chat_id)
+            # Usar el chat_id del usuario que envió el mensaje
+            if not chat_id:
+                from config import REMINDER_CHAT_ID
+                chat_id = REMINDER_CHAT_ID
+            result = add_reminder(message=message, remind_at=remind_at, chat_id=str(chat_id))
             return result["message"]
             
         else:
