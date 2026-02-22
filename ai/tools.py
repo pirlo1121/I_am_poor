@@ -601,7 +601,7 @@ all_tools = types.Tool(
                     ),
                     "remind_at": types.Schema(
                         type=types.Type.STRING,
-                        description="Fecha y hora en formato ISO 8601 (ej: '2026-02-23T16:00:00'). Calcula la fecha/hora a partir de lo que diga el usuario (ej: 'mañana a las 4 PM', 'el viernes a las 10 AM'). Si no especifica hora, usa 09:00."
+                        description="Fecha y hora en formato ISO 8601 CON zona horaria Colombia (ej: '2026-02-23T16:00:00-05:00'). SIEMPRE incluye '-05:00' al final. Calcula la fecha/hora a partir de lo que diga el usuario (ej: 'mañana a las 4 PM', 'en 20 minutos', 'el viernes a las 10 AM'). Si no especifica hora, usa 09:00. Para 'en X minutos/horas', suma X a la hora actual."
                     )
                 },
                 required=["message", "remind_at"]

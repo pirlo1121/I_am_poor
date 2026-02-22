@@ -930,6 +930,14 @@ def check_upcoming_bills(days_ahead: int = 1) -> list:
 def add_reminder(message: str, remind_at: str, chat_id: str) -> Dict:
     """Crea un recordatorio personalizado."""
     client = get_supabase_client()
+    
+    # Asegurar que remind_at tenga timezone de Colombia (UTC-5)
+    # La IA puede enviar datetime sin TZ (ej: "2026-02-22T17:00:00"),
+    # y Supabase lo interpretaría como UTC, causando que el recordatorio
+    # se dispare a la hora incorrecta (5 horas antes).
+    if remind_at and '+' not in remind_at and '-05:00' not in remind_at and not remind_at.endswith('Z'):
+        remind_at = remind_at + "-05:00"
+    
     data = {
         "message": message.strip(),
         "remind_at": remind_at,

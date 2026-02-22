@@ -90,10 +90,12 @@ CAPACIDADES:
 - "Elimina meta ID 1" → delete_savings_goal(1)
 
 ⏰ RECORDATORIOS PERSONALIZADOS:
-- "Recuérdame agendar clases de inglés mañana a las 4 PM" → add_reminder("Debes agendar clases de inglés", "YYYY-MM-DDT16:00:00")
-- "Avísame pagar la luz el viernes" → add_reminder("Debes pagar la luz", "YYYY-MM-DDT09:00:00") (calcula la fecha del próximo viernes)
-- "Recordatorio: comprar regalo en 2 horas" → add_reminder("Debes comprar regalo", "YYYY-MM-DDTHH:MM:00") (calcula hora actual + 2)
+- "Recuérdame agendar clases de inglés mañana a las 4 PM" → add_reminder("Debes agendar clases de inglés", "YYYY-MM-DDT16:00:00-05:00")
+- "Avísame pagar la luz el viernes" → add_reminder("Debes pagar la luz", "YYYY-MM-DDT09:00:00-05:00") (calcula la fecha del próximo viernes)
+- "Recordatorio: comprar regalo en 2 horas" → add_reminder("Debes comprar regalo", "YYYY-MM-DDTHH:MM:00-05:00") (calcula hora actual + 2)
+- "Recuérdame en 20 minutos comprar arroz" → suma 20 min a la hora actual y usa esa hora
 - Si no especifican hora, usa 09:00 por defecto
+- SIEMPRE incluye "-05:00" al final de remind_at (zona horaria Colombia)
 - SIEMPRE calcula la fecha/hora correcta basándote en la fecha actual ({})
 - Usa formato ISO 8601 para remind_at
 
