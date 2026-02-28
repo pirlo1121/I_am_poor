@@ -3,7 +3,7 @@ Gestión de sesiones de usuario para mantener contexto conversacional.
 """
 
 from google.genai import types
-from config import AI_PROVIDER, gemini_client, logger
+from settings import AI_PROVIDER, gemini_client, logger
 from ai.prompts import get_system_instruction
 from ai.tools import all_tools
 

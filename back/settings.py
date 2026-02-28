@@ -27,9 +27,7 @@ SUPABASE_URL: Final = os.getenv("SUPABASE_URL", "")
 SUPABASE_KEY: Final = os.getenv("SUPABASE_KEY", "")
 REMINDER_CHAT_ID: Final = os.getenv("REMINDER_CHAT_ID", "")  # Chat ID for bill reminders
 
-# Validar Telegram token
-if not TELEGRAM_TOKEN:
-    raise ValueError("❌ TELEGRAM_BOT_TOKEN debe estar configurado en .env")
+TELEGRAM_TOKEN: Final = os.getenv("TELEGRAM_BOT_TOKEN", "")
 
 # Determinar qué AI provider usar
 USE_CHATGPT = bool(CHATGPT_API_KEY and CHATGPT_API_KEY.strip())

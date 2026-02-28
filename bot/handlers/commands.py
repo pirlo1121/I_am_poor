@@ -1,15 +1,12 @@
 """
-Handlers para los comandos del bot de Telegram.
+Handlers para los comandos del bot de Telegram (Cliente).
+Ahora delegan al api_client en lugar de consultar la base de datos.
 """
 
 from telegram import Update
 from telegram.ext import ContextTypes
 from config import logger
-from database import (
-    get_recent_expenses,
-    get_category_summary,
-    get_pending_payments
-)
+from api_client import send_chat_message
 
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -72,41 +69,39 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
 
 async def gastos_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Maneja el comando /gastos - muestra los gastos recientes"""
+    """Maneja el comando /gastos - delega la pregunta a la API"""
     try:
-        expenses_text = get_recent_expenses()
-        await update.message.reply_text(expenses_text, parse_mode='Markdown')
+        await context.bot.send_chat_action(chat_id=update.effective_chat.id, action='typing')
+        reply = await send_chat_message(user_id=update.effective_user.id, message="Muestra mis últimos gastos")
+        await update.message.reply_text(reply, parse_mode='Markdown')
     except Exception as e:
         logger.error(f"Error en /gastos: {e}")
-        await update.message.reply_text(
-            "❌ Error al consultar los gastos. Intenta de nuevo más tarde."
-        )
+        await update.message.reply_text("❌ Error al consultar los gastos. Intenta de nuevo más tarde.")
 
 
 async def resumen_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Maneja el comando /resumen - muestra análisis por categorías"""
+    """Maneja el comando /resumen - delega la pregunta a la API"""
     try:
-        summary_text = get_category_summary()
-        await update.message.reply_text(summary_text, parse_mode='Markdown')
+        await context.bot.send_chat_action(chat_id=update.effective_chat.id, action='typing')
+        reply = await send_chat_message(user_id=update.effective_user.id, message="Dame un resumen de mis gastos por categoría")
+        await update.message.reply_text(reply, parse_mode='Markdown')
     except Exception as e:
         logger.error(f"Error en /resumen: {e}")
-        await update.message.reply_text(
-            "❌ Error al generar el resumen. Intenta de nuevo más tarde."
-        )
+        await update.message.reply_text("❌ Error al generar el resumen. Intenta de nuevo más tarde.")
 
 
 async def facturas_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Maneja el comando /facturas - muestra facturas pendientes"""
+    """Maneja el comando /facturas - delega la pregunta a la API"""
     try:
-        pending_text = get_pending_payments()
-        await update.message.reply_text(pending_text, parse_mode='Markdown')
+        await context.bot.send_chat_action(chat_id=update.effective_chat.id, action='typing')
+        reply = await send_chat_message(user_id=update.effective_user.id, message="Muéstrame mis facturas pendientes")
+        await update.message.reply_text(reply, parse_mode='Markdown')
     except Exception as e:
         logger.error(f"Error en /facturas: {e}")
-        await update.message.reply_text(
-            "❌ Error al consultar facturas. Intenta de nuevo más tarde."
-        )
+        await update.message.reply_text("❌ Error al consultar facturas. Intenta de nuevo más tarde.")
 
 
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Maneja errores del bot"""
     logger.error(f"Update {update} causó error: {context.error}")
+

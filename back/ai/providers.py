@@ -3,7 +3,7 @@ AI Providers wrapper - Unifica Gemini y ChatGPT.
 """
 
 from google.genai import types
-from config import AI_PROVIDER, gemini_client, openai, logger
+from settings import AI_PROVIDER, gemini_client, openai, logger
 from .prompts import get_system_instruction
 from .tools import all_tools
 

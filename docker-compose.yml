@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  back:
+    build:
+      context: ./back
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+      - .env
+    # For hot-reloading in development, uncomment these lines
+    # volumes:
+    #   - ./back:/app
+    # command: ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+  bot:
+    build:
+      context: ./bot
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      - API_URL=http://back:8000
+    depends_on:
+      - back
+    # For hot-reloading in development, uncomment these lines
+    # volumes:
+    #   - ./bot:/app

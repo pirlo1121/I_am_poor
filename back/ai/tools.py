@@ -3,7 +3,7 @@ Declaración de herramientas (tools) para AI Function Calling.
 """
 
 from google.genai import types
-from config import logger
+from settings import logger
 from database import (
     add_expense,
     get_recent_expenses,
@@ -824,7 +824,7 @@ async def execute_function(function_name: str, function_args: dict, chat_id: str
             remind_at = function_args.get("remind_at")
             # Usar el chat_id del usuario que envió el mensaje
             if not chat_id:
-                from config import REMINDER_CHAT_ID
+                from settings import REMINDER_CHAT_ID
                 chat_id = REMINDER_CHAT_ID
             result = add_reminder(message=message, remind_at=remind_at, chat_id=str(chat_id))
             return result["message"]

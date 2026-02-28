@@ -4,7 +4,7 @@ from typing import Dict, List, Optional, Any
 from datetime import datetime, timedelta, timezone
 import calendar
 from supabase import create_client, Client
-from config import logger, SUPABASE_URL, SUPABASE_KEY
+from settings import logger, SUPABASE_URL, SUPABASE_KEY
 
 # Zona horaria de Colombia (UTC-5)
 COLOMBIA_TZ = timezone(timedelta(hours=-5))

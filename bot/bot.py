@@ -1,9 +1,7 @@
 """
-bot.py - Bot de Telegram con IA (Asistente Financiero Personal)
-Bot que interpreta lenguaje natural usando Gemini Pro/ChatGPT para registrar gastos
-y consultar información financiera en una base de datos PostgreSQL (Supabase).
+bot.py - Bot de Telegram (Cliente)
+Bot que envía y recibe mensajes consumiendo una API centralizada en FastAPI.
 """
-
 from datetime import time, timezone, timedelta
 from telegram import Update
 from telegram.ext import (
@@ -13,20 +11,21 @@ from telegram.ext import (
     filters
 )
 
-from config import TELEGRAM_TOKEN, REMINDER_CHAT_ID, logger
-from handlers import (
+from config.settings import TELEGRAM_TOKEN, REMINDER_CHAT_ID, logger
+from handlers.commands import (
     start_command,
     help_command,
     gastos_command,
     resumen_command,
-    facturas_command,
-    error_handler,
-    handle_message,
-    handle_voice_message
+    facturas_command
 )
-from database import check_upcoming_bills, get_due_reminders, delete_reminder
-from core.session_manager import user_sessions
+from handlers.messages import (
+    handle_message,
+    handle_voice_message,
+    error_handler
+)
 
+from api_client import get_due_bills, get_custom_reminders, delete_custom_reminder
 
 # ============================================
 # RECORDATORIOS AUTOMÁTICOS
@@ -35,14 +34,14 @@ from core.session_manager import user_sessions
 async def send_bill_reminders(context) -> None:
     """
     Job diario: verifica facturas que vencen mañana y envía recordatorio.
-    Se ejecuta todos los días a las 8:00 AM.
+    Se ejecuta todos los días a las 8:00 AM consultando al Backend.
     """
     if not REMINDER_CHAT_ID:
         logger.warning("⚠️ REMINDER_CHAT_ID no configurado. Saltando recordatorios.")
         return
     
     try:
-        upcoming = check_upcoming_bills(days_ahead=1)
+        upcoming = await get_due_bills(days_ahead=1)
         
         if not upcoming:
             logger.info("✅ No hay facturas por vencer mañana.")
@@ -64,37 +63,18 @@ async def send_bill_reminders(context) -> None:
             text=msg,
             parse_mode='Markdown'
         )
-        logger.info(f"📨 Recordatorio enviado: {len(upcoming)} facturas por vencer mañana")
+        logger.info(f"📨 Recordatorio de facturas enviado: {len(upcoming)} facturas")
         
     except Exception as e:
-        logger.error(f"❌ Error enviando recordatorios: {e}")
-
-
-async def cleanup_inactive_sessions(context) -> None:
-    """
-    Job periódico: limpia sesiones de usuarios inactivos para liberar memoria.
-    Se ejecuta cada 2 horas.
-    """
-    if not user_sessions:
-        return
-    
-    # Limpiar sesiones (el dict se mantiene en memoria)
-    count = len(user_sessions)
-    if count > 50:
-        # Si hay muchas sesiones, limpiar las más antiguas
-        # Simple approach: clear all (sessions se recrean al primer mensaje)
-        user_sessions.clear()
-        logger.info(f"🧹 Limpiadas {count} sesiones inactivas")
-
+        logger.error(f"❌ Error enviando recordatorios de facturas: {e}")
 
 async def send_custom_reminders(context) -> None:
     """
     Job periódico: verifica recordatorios personalizados que ya llegaron a su hora
-    y los envía. Se ejecuta cada 60 segundos.
-    Los recordatorios se eliminan de la BD después de enviarse.
+    y los envía interactuando con el Backend. Se ejecuta cada 60 segundos.
     """
     try:
-        due_reminders = get_due_reminders()
+        due_reminders = await get_custom_reminders()
         
         if not due_reminders:
             return
@@ -113,8 +93,8 @@ async def send_custom_reminders(context) -> None:
                     parse_mode='Markdown'
                 )
                 
-                # Eliminar recordatorio después de enviarlo
-                delete_reminder(reminder_id)
+                # Eliminar recordatorio en el backend después de enviarlo
+                await delete_custom_reminder(reminder_id)
                 logger.info(f"📨 Recordatorio enviado y eliminado: '{message}' (ID: {reminder_id})")
                 
             except Exception as e:
@@ -126,9 +106,9 @@ async def send_custom_reminders(context) -> None:
 
 def main() -> None:
     """
-    Función principal - Inicializa y ejecuta el bot.
+    Función principal - Inicializa y ejecuta el bot cliente.
     """
-    logger.info("🚀 Iniciando Asistente Financiero Bot...")
+    logger.info("🚀 Iniciando Cliente Bot Telegram...")
     
     # Crear aplicación del bot
     application = Application.builder().token(TELEGRAM_TOKEN).build()
@@ -140,7 +120,7 @@ def main() -> None:
     application.add_handler(CommandHandler("resumen", resumen_command))
     application.add_handler(CommandHandler("facturas", facturas_command))
     
-    # Handler para mensajes de texto (mensajes normales del usuario)
+    # Handler para mensajes de texto
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
     # Handler para mensajes de voz
@@ -165,16 +145,8 @@ def main() -> None:
             )
             logger.info("⏰ Recordatorio diario de facturas programado (8:00 AM)")
         else:
-            logger.info("ℹ️ REMINDER_CHAT_ID no configurado. Recordatorios desactivados.")
-        
-        # Limpieza de sesiones cada 2 horas
-        job_queue.run_repeating(
-            cleanup_inactive_sessions,
-            interval=7200,  # 2 horas en segundos
-            first=3600,     # Primera ejecución en 1 hora
-            name="session_cleanup"
-        )
-        
+            logger.info("ℹ️ REMINDER_CHAT_ID no configurado para facturas.")
+            
         # Recordatorios personalizados cada 60 segundos
         job_queue.run_repeating(
             send_custom_reminders,
@@ -187,7 +159,7 @@ def main() -> None:
         logger.warning("⚠️ JobQueue no disponible. Instala con: pip install 'python-telegram-bot[job-queue]'")
     
     # Iniciar bot
-    logger.info("✅ Bot iniciado correctamente. Esperando mensajes...")
+    logger.info("✅ Bot cliente iniciado correctamente. Conectado al Backend.")
     application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
