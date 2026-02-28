@@ -340,3 +340,32 @@ async def transcribe_voice_message(file_path: str) -> str:
         logger.error(traceback.format_exc())
         raise Exception(f"No pude transcribir el audio: {str(e)}")
 
+# ============================================
+# FUNCIONES AUXILIARES DE TELEGRAM
+# ============================================
+
+def split_message(text: str, max_length: int = 4096) -> list[str]:
+    """Divide un mensaje largo en partes que quepan en el límite de Telegram (4096)."""
+    if len(text) <= max_length:
+        return [text]
+    
+    parts = []
+    while len(text) > 0:
+        if len(text) <= max_length:
+            parts.append(text)
+            break
+            
+        # Intentar cortar en un salto de línea
+        split_at = text.rfind('\n', 0, max_length)
+        if split_at == -1:
+            # Si no hay salto, intentar un espacio
+            split_at = text.rfind(' ', 0, max_length)
+            if split_at == -1:
+                # Si no hay espacio, cortar crudo
+                split_at = max_length
+                
+        parts.append(text[:split_at])
+        text = text[split_at:].lstrip()
+        
+    return parts
+
