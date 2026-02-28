@@ -40,7 +40,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-def process_ai_response(response, user_message: str, user_id: int):
+async def process_ai_response(response, user_message: str, user_id: int):
     """Procesa la respuesta usando el proveedor configurado."""
     state = get_session(user_id)
     chat_session = state.get('chat_session')
@@ -79,7 +79,7 @@ def process_ai_response(response, user_message: str, user_id: int):
                 arguments = json.loads(tool_call.function.arguments)
                 
                 print(f"[API] 🛠️ Ejecutando herramienta ChatGPT: {function_name}({arguments})")
-                tool_result = call_tool(function_name, arguments, user_id)
+                tool_result = await call_tool(function_name, arguments, user_id)
                 
                 messages.append({
                     "role": "tool",
@@ -123,7 +123,7 @@ def process_ai_response(response, user_message: str, user_id: int):
                     args_dict = tool_call.args
                 
                 print(f"[API] 🛠️ Ejecutando herramienta Gemini: {function_name}({args_dict})")
-                tool_result = call_tool(function_name, args_dict, user_id)
+                tool_result = await call_tool(function_name, args_dict, user_id)
                 
                 # Send result back
                 tool_response = types.Content(
@@ -185,7 +185,7 @@ async def chat_endpoint(request: ChatRequest):
             save_session(user_id, state)
         
         response = generate_ai_response(message, chat_session)
-        reply = process_ai_response(response, message, user_id)
+        reply = await process_ai_response(response, message, user_id)
         
         return ChatResponse(reply=reply)
         
