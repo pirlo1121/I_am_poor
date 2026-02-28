@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # ========================================
-# Script de Deploy Automático
+# Script de Deploy Automático con Docker
 # Bot de Telegram - I_am_poor
 # ========================================
 
@@ -16,11 +16,9 @@ NC='\033[0m' # No Color
 
 # Configuración
 PROJECT_DIR="$HOME/I_am_poor"
-SERVICE_NAME="telegram-bot"
-VENV_PATH="$PROJECT_DIR/venv"
 
 echo -e "${BLUE}========================================${NC}"
-echo -e "${BLUE}  🚀 Iniciando Deploy Automático${NC}"
+echo -e "${BLUE}  🚀 Iniciando Deploy Automático (Docker)${NC}"
 echo -e "${BLUE}========================================${NC}\n"
 
 # 1. Verificar que estamos en el directorio correcto
@@ -31,12 +29,12 @@ cd "$PROJECT_DIR" || {
 }
 echo -e "${GREEN}✅ Directorio: $(pwd)${NC}\n"
 
-# 2. Detener el servicio
-echo -e "${YELLOW}🛑 Deteniendo el bot...${NC}"
-sudo systemctl stop "$SERVICE_NAME" || {
-    echo -e "${RED}⚠️  Advertencia: El servicio no estaba corriendo${NC}"
-}
-echo -e "${GREEN}✅ Bot detenido${NC}\n"
+# 2. Detener servicio antiguo si existe y está corriendo
+if systemctl list-units --full -all | grep -Fq "telegram-bot.service"; then
+    echo -e "${YELLOW}🛑 Deteniendo el servicio antiguo de systemd (telegram-bot)...${NC}"
+    sudo systemctl stop telegram-bot 2>/dev/null || true
+    sudo systemctl disable telegram-bot 2>/dev/null || true
+fi
 
 # 3. Hacer backup del .env (por si acaso)
 if [ -f .env ]; then
@@ -49,66 +47,31 @@ fi
 echo -e "${YELLOW}📥 Descargando cambios del repositorio...${NC}"
 git pull || {
     echo -e "${RED}❌ Error al hacer git pull${NC}"
-    echo -e "${YELLOW}🔄 Intentando reiniciar el servicio...${NC}"
-    sudo systemctl start "$SERVICE_NAME"
     exit 1
 }
 echo -e "${GREEN}✅ Código actualizado${NC}\n"
 
-# 5. Activar entorno virtual y actualizar dependencias
-echo -e "${YELLOW}📦 Verificando dependencias...${NC}"
-source "$VENV_PATH/bin/activate" || {
-    echo -e "${RED}❌ Error al activar el entorno virtual${NC}"
+# 5. Reconstruir e iniciar los contenedores
+echo -e "${YELLOW}📦 Construyendo e iniciando contenedores con Docker Compose...${NC}"
+docker compose up -d --build || {
+    echo -e "${RED}❌ Error al ejecutar Docker Compose${NC}"
     exit 1
 }
+echo -e "${GREEN}✅ Contenedores iniciados exitosamente${NC}\n"
 
-# Verificar si requirements.txt cambió
-if git diff HEAD@{1} HEAD --name-only | grep -q "requirements.txt"; then
-    echo -e "${YELLOW}📦 requirements.txt cambió, actualizando dependencias...${NC}"
-    pip install --upgrade pip
-    pip install -r requirements.txt
-    echo -e "${GREEN}✅ Dependencias actualizadas${NC}\n"
-else
-    echo -e "${GREEN}✅ No hay cambios en dependencias${NC}\n"
-fi
-
-# 6. Reiniciar el servicio
-echo -e "${YELLOW}🚀 Reiniciando el bot...${NC}"
-sudo systemctl start "$SERVICE_NAME" || {
-    echo -e "${RED}❌ Error al iniciar el servicio${NC}"
-    exit 1
-}
-
-# Esperar 2 segundos para que inicie
+# Esperar 2 segundos para que inicien bien
 sleep 2
 
-# 7. Verificar estado
-echo -e "${YELLOW}🔍 Verificando estado del servicio...${NC}"
-if sudo systemctl is-active --quiet "$SERVICE_NAME"; then
-    echo -e "${GREEN}✅ Bot iniciado correctamente${NC}\n"
-    
-    # Mostrar últimas líneas del log
-    echo -e "${BLUE}📋 Últimas 10 líneas del log:${NC}"
-    echo -e "${BLUE}========================================${NC}"
-    tail -n 10 "$PROJECT_DIR/bot.log" 2>/dev/null || echo "No hay logs disponibles aún"
-    echo -e "${BLUE}========================================${NC}\n"
-else
-    echo -e "${RED}❌ El bot no se inició correctamente${NC}"
-    echo -e "${YELLOW}📋 Últimas líneas del error log:${NC}"
-    tail -n 20 "$PROJECT_DIR/bot_error.log" 2>/dev/null || sudo journalctl -u "$SERVICE_NAME" -n 20
-    exit 1
-fi
-
-# 8. Resumen final
+# 6. Resumen final
 echo -e "${GREEN}========================================${NC}"
 echo -e "${GREEN}  ✅ Deploy completado exitosamente${NC}"
 echo -e "${GREEN}========================================${NC}"
-echo -e "\n${BLUE}📊 Estado del servicio:${NC}"
-sudo systemctl status "$SERVICE_NAME" --no-pager -l
+echo -e "\n${BLUE}📊 Estado de los contenedores:${NC}"
+docker compose ps
 
 echo -e "\n${YELLOW}💡 Comandos útiles:${NC}"
-echo -e "  Ver logs en tiempo real: ${BLUE}tail -f $PROJECT_DIR/bot.log${NC}"
-echo -e "  Ver errores:             ${BLUE}tail -f $PROJECT_DIR/bot_error.log${NC}"
-echo -e "  Ver estado:              ${BLUE}sudo systemctl status $SERVICE_NAME${NC}"
-echo -e "  Detener:                 ${BLUE}sudo systemctl stop $SERVICE_NAME${NC}"
-echo -e "  Reiniciar:               ${BLUE}sudo systemctl restart $SERVICE_NAME${NC}\n"
+echo -e "  Ver logs del bot:     ${BLUE}docker compose logs -f bot${NC}"
+echo -e "  Ver logs del backend: ${BLUE}docker compose logs -f back${NC}"
+echo -e "  Ver estado:           ${BLUE}docker compose ps${NC}"
+echo -e "  Detener todo:         ${BLUE}docker compose down${NC}"
+echo -e "  Reiniciar todo:       ${BLUE}docker compose restart${NC}\n"
