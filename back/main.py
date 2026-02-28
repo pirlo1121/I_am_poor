@@ -164,7 +164,8 @@ async def chat_endpoint(request: ChatRequest):
         
         if not chat_session:
             print(f"[API] 🆕 Iniciando nueva sesión para usuario {user_id}")
-            if os.getenv("AI_PROVIDER", "gemini").lower() == "gemini":
+            from settings import AI_PROVIDER
+            if AI_PROVIDER == "gemini":
                 from settings import gemini_client
                 from ai.prompts import get_system_instruction
                 from google.genai import types

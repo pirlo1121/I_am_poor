@@ -21,7 +21,20 @@ echo -e "${BLUE}========================================${NC}"
 echo -e "${BLUE}  🚀 Iniciando Deploy Automático (Docker)${NC}"
 echo -e "${BLUE}========================================${NC}\n"
 
-# 1. Verificar que estamos en el directorio correcto
+# 1. Verificar si Docker está instalado
+echo -e "${YELLOW}🐳 Verificando instalación de Docker...${NC}"
+if ! command -v docker &> /dev/null; then
+    echo -e "${RED}❌ Error: Docker no está instalado en este servidor.${NC}"
+    echo -e "${YELLOW}💡 Para instalarlo rápidamente ejecuta estos comandos:${NC}"
+    echo -e "  curl -fsSL https://get.docker.com -o get-docker.sh"
+    echo -e "  sudo sh get-docker.sh"
+    echo -e "  sudo usermod -aG docker \$USER"
+    echo -e "  newgrp docker"
+    exit 1
+fi
+echo -e "${GREEN}✅ Docker está instalado y listo${NC}\n"
+
+# 2. Verificar que estamos en el directorio correcto
 echo -e "${YELLOW}📂 Navegando al directorio del proyecto...${NC}"
 cd "$PROJECT_DIR" || {
     echo -e "${RED}❌ Error: No se encontró el directorio $PROJECT_DIR${NC}"
