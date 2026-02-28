@@ -45,7 +45,8 @@ def process_ai_response(response, user_message: str, user_id: int):
     state = get_session(user_id)
     chat_session = state.get('chat_session')
     
-    if os.getenv("AI_PROVIDER", "gemini").lower() == "chatgpt":
+    from settings import AI_PROVIDER
+    if AI_PROVIDER == "chatgpt":
         import openai
         
         reply_text = response.choices[0].message.content
