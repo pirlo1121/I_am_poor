@@ -29,17 +29,21 @@ REMINDER_CHAT_ID: Final = os.getenv("REMINDER_CHAT_ID", "")  # Chat ID for bill 
 
 TELEGRAM_TOKEN: Final = os.getenv("TELEGRAM_BOT_TOKEN", "")
 
-# Determinar qué AI provider usar
-USE_CHATGPT = bool(CHATGPT_API_KEY and CHATGPT_API_KEY.strip())
+# Fallback a Gemini siempre ya que la key de ChatGPT es invalida.
+USE_CHATGPT = False
+
+# Always initialize Gemini client (for voice transcription or fallback)
+if GEMINI_API_KEY:
+    gemini_client = genai.Client(api_key=GEMINI_API_KEY)
+else:
+    gemini_client = None
 
 if USE_CHATGPT:
     logger.info("🤖 Usando ChatGPT como AI provider")
     openai.api_key = CHATGPT_API_KEY
     AI_PROVIDER = "chatgpt"
-    gemini_client = None
 else:
     if not GEMINI_API_KEY:
         raise ValueError("❌ Debes configurar GEMINI_API_KEY o CHATGPT_API_KEY en .env")
     logger.info("🤖 Usando Gemini como AI provider")
-    gemini_client = genai.Client(api_key=GEMINI_API_KEY)
     AI_PROVIDER = "gemini"

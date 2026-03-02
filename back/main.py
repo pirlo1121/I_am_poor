@@ -208,22 +208,35 @@ async def chat_voice_endpoint(user_id: int = Form(...), file: UploadFile = File(
             temp_audio_path = temp_audio.name
             
         try:
-            # Transcribe
-            client = openai.OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-            with open(temp_audio_path, "rb") as audio_file:
-                transcription = client.audio.transcriptions.create(
-                    model="whisper-1",
-                    file=audio_file,
-                    language="es"
-                )
+            # Transcribe with Gemini
+            from settings import gemini_client
+            import pathlib
             
-            user_text = transcription.text
+            # Upload the file to Gemini
+            uploaded_file = gemini_client.files.upload(
+                file=pathlib.Path(temp_audio_path),
+                config={'mime_type': 'audio/ogg'}
+            )
+            
+            # Generate transcription
+            response = gemini_client.models.generate_content(
+                model='gemini-2.5-flash',
+                contents=[
+                    uploaded_file,
+                    "Por favor transcribe este mensaje de voz literalmente en español."
+                ]
+            )
+            user_text = response.text
+            
+            # Clean up the file from Gemini
+            gemini_client.files.delete(name=uploaded_file.name)
+            
             print(f"[API] 🎙️ Texto transcrito: '{user_text}'")
             
         finally:
             os.remove(temp_audio_path)
             
-        if not user_text.strip():
+        if not user_text or not user_text.strip():
             return ChatResponse(reply="No pude entender el mensaje de voz. ¿Podrías intentar de nuevo o escribirlo?")
             
         # Process as chat message
