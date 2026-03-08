@@ -185,8 +185,10 @@ async def chat_endpoint(request: ChatRequest):
         chat_session = state.get('chat_session')
         
         if not chat_session:
-            print(f"[API] 🆕 Iniciando nueva sesión para usuario {user_id}")
             from settings import AI_PROVIDER
+            print(f"[API] 🆕 Iniciando nueva sesión para usuario {user_id}")
+            print(f"[API] 🤖 Usando: {AI_PROVIDER.upper()}")
+
             if AI_PROVIDER == "gemini":
                 from settings import gemini_client
                 from ai.prompts import get_system_instruction
@@ -211,11 +213,23 @@ async def chat_endpoint(request: ChatRequest):
         return ChatResponse(reply=reply)
         
     except Exception as e:
+        error_str = str(e).lower()
         print(f"[API] ❌ Error en /api/chat: {e}")
         traceback.print_exc()
+        
+        # Detectar errores de quota/rate limit
+        quota_keywords = ['quota', 'rate limit', 'resource_exhausted', '429', 'exceeded', 'too many requests']
+        is_quota_error = any(kw in error_str for kw in quota_keywords)
+        
+        if is_quota_error:
+            from settings import AI_PROVIDER
+            reply_msg = f"⚠️ Se agotaron los tokens o solicitudes de tu API ({AI_PROVIDER.upper()}). Espera un momento e intenta de nuevo."
+        else:
+            reply_msg = "Lo siento, hubo un error interno. He reiniciado la sesión."
+        
         # Reset session on critical error
         save_session(request.user_id, {'chat_session': None})
-        return ChatResponse(reply="Lo siento, hubo un error interno. He reiniciado la sesión.", error=str(e))
+        return ChatResponse(reply=reply_msg, error=str(e))
 
 @app.post("/api/chat/voice", response_model=ChatResponse)
 async def chat_voice_endpoint(user_id: int = Form(...), file: UploadFile = File(...)):
