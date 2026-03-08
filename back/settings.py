@@ -29,8 +29,8 @@ REMINDER_CHAT_ID: Final = os.getenv("REMINDER_CHAT_ID", "")  # Chat ID for bill 
 
 TELEGRAM_TOKEN: Final = os.getenv("TELEGRAM_BOT_TOKEN", "")
 
-# Fallback a Gemini siempre ya que la key de ChatGPT es invalida.
-USE_CHATGPT = False
+# Usar ChatGPT como provider por defecto
+USE_CHATGPT = True
 
 # Always initialize Gemini client (for voice transcription or fallback)
 if GEMINI_API_KEY:
