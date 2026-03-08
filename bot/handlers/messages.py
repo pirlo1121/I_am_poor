@@ -25,11 +25,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE, use
     from utils import split_message
     messages = split_message(reply)
     for msg in messages:
-        await context.bot.send_message(
-            chat_id=update.effective_chat.id,
-            text=msg,
-            parse_mode='Markdown'
-        )
+        try:
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text=msg,
+                parse_mode='Markdown'
+            )
+        except Exception:
+            # Markdown parsing failed, send without formatting
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text=msg
+            )
 
 async def handle_voice_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Maneja mensajes de voz enviándolos al Backend para transcripción y respuesta."""
@@ -47,11 +54,18 @@ async def handle_voice_message(update: Update, context: ContextTypes.DEFAULT_TYP
     from utils import split_message
     messages = split_message(reply)
     for msg in messages:
-        await context.bot.send_message(
-            chat_id=update.effective_chat.id,
-            text=msg,
-            parse_mode='Markdown'
-        )
+        try:
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text=msg,
+                parse_mode='Markdown'
+            )
+        except Exception:
+            # Markdown parsing failed, send without formatting
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text=msg
+            )
 
 async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Manejo de errores del bot cliente."""

@@ -109,23 +109,36 @@ async def process_ai_response(response, user_message: str, user_id: int):
         from google.genai import types
         chat = chat_session
         
-        if response.function_calls:
+        # Check if there are function calls to process
+        has_function_calls = hasattr(response, 'function_calls') and response.function_calls
+        
+        if has_function_calls:
             from ai.tools import execute_function as call_tool
+            
             for tool_call in response.function_calls:
                 function_name = tool_call.name
                 
-                # Extract args
-                if isinstance(tool_call.args, dict):
-                    args_dict = tool_call.args
-                elif hasattr(tool_call.args, "items"):
-                    args_dict = {k: v for k, v in tool_call.args.items()}
-                else:
-                    args_dict = tool_call.args
+                # Extract args safely
+                try:
+                    if isinstance(tool_call.args, dict):
+                        args_dict = tool_call.args
+                    elif hasattr(tool_call.args, "items"):
+                        args_dict = {k: v for k, v in tool_call.args.items()}
+                    else:
+                        args_dict = tool_call.args or {}
+                except Exception:
+                    args_dict = {}
                 
                 print(f"[API] 🛠️ Ejecutando herramienta Gemini: {function_name}({args_dict})")
-                tool_result = await call_tool(function_name, args_dict, user_id)
                 
-                # Send result back
+                # Execute tool with error handling per call
+                try:
+                    tool_result = await call_tool(function_name, args_dict, user_id)
+                except Exception as tool_err:
+                    print(f"[API] ⚠️ Error ejecutando {function_name}: {tool_err}")
+                    tool_result = f"Error ejecutando {function_name}: {str(tool_err)}"
+                
+                # Send result back to Gemini
                 tool_response = types.Content(
                     role="user",
                     parts=[
@@ -140,10 +153,18 @@ async def process_ai_response(response, user_message: str, user_id: int):
                     final_response = chat.send_message(tool_response)
                     reply_text = final_response.text
                 except Exception as e:
-                    print(f"[API] ⚠️ Error en 2da llamada Gemini: {e}")
-                    reply_text = "Se ejecutó la acción pero hubo un problema generando la respuesta final."
+                    print(f"[API] ⚠️ Error en respuesta final Gemini: {e}")
+                    # Use tool result as fallback
+                    reply_text = str(tool_result) if tool_result else "Se ejecutó la acción pero hubo un problema generando la respuesta."
         else:
-            reply_text = response.text
+            # No function calls - get text response
+            try:
+                reply_text = response.text
+            except Exception:
+                reply_text = None
+            
+            if not reply_text:
+                reply_text = "No pude procesar tu mensaje. ¿Podrías reformularlo?"
             
         state['chat_session'] = chat
         
